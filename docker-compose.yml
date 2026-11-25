@@ -1,0 +1,131 @@
+# Stack completo de PagoSeguro para desarrollo, demo y pruebas de carga.
+#
+#   python -m ... notebook → models/   (los Dockerfiles copian los artefactos del modelo)
+#   cp .env.example .env                (y cambiar las contraseñas)
+#   docker compose up -d --build
+#
+# URLs (TLS con certificados de la CA interna de Caddy):
+#   https://localhost:8443/docs   API (Swagger)      http://localhost:8000 sin TLS (solo dev)
+#   https://localhost:8444        Dashboard          http://localhost:15672 RabbitMQ
+# Perfiles opcionales:
+#   docker compose --profile monitoring up -d   Prometheus :9090 + Grafana :3000
+#   docker compose --profile load up -d         Locust :8089
+#   docker compose up -d --scale api=3 --scale worker=2
+
+name: pagoseguro-fraud
+
+x-api-env: &common-env
+  RABBITMQ_URL: amqp://${RABBITMQ_USER:-fraud}:${RABBITMQ_PASSWORD:?define RABBITMQ_PASSWORD en .env}@rabbitmq:5672/
+  DATABASE_URL: postgresql+psycopg://fraud:${POSTGRES_PASSWORD:?define POSTGRES_PASSWORD en .env}@postgres:5432/fraud_audit
+
+services:
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-fraud}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD}
+    ports: ["127.0.0.1:15672:15672"]          # consola de administración solo en localhost
+    volumes: [rabbitmq-data:/var/lib/rabbitmq]
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: fraud
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: fraud_audit
+    volumes: [postgres-data:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U fraud -d fraud_audit"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  api:
+    build: {context: ., dockerfile: api/Dockerfile}
+    environment:
+      <<: *common-env
+      SCORER_BACKEND: ${SCORER_BACKEND:-local}
+      SAGEMAKER_ENDPOINT: ${SAGEMAKER_ENDPOINT:-pagoseguro-fraud}
+      AWS_REGION: ${AWS_REGION:-us-east-1}
+      API_KEYS: ${API_KEYS:?define API_KEYS en .env}
+      RATE_LIMIT_PER_MINUTE: ${RATE_LIMIT_PER_MINUTE:-6000}
+    volumes:
+      - ${AWS_CONFIG_DIR:-~/.aws}:/home/app/.aws:ro   # credenciales para SCORER_BACKEND=sagemaker
+    ports: ["127.0.0.1:8000:8000"]
+    depends_on:
+      rabbitmq: {condition: service_healthy}
+      postgres: {condition: service_healthy}
+    restart: unless-stopped
+
+  worker:
+    build: {context: ., dockerfile: worker/Dockerfile}
+    environment:
+      <<: *common-env
+      EXPLAIN_DECISIONS: ${EXPLAIN_DECISIONS:-REJECT,REVIEW}
+    depends_on:
+      rabbitmq: {condition: service_healthy}
+      postgres: {condition: service_healthy}
+    restart: unless-stopped
+
+  dashboard:
+    build: {context: ., dockerfile: dashboard/Dockerfile}
+    environment:
+      API_URL: http://api:8000
+      API_KEY: ${DASHBOARD_API_KEY:-}
+    depends_on: [api]
+    restart: unless-stopped
+
+  proxy:
+    # Terminación TLS (en AWS: ALB + certificado ACM)
+    image: caddy:2-alpine
+    ports: ["8443:8443", "8444:8444"]
+    volumes:
+      - ./infra/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+    depends_on: [api, dashboard]
+    restart: unless-stopped
+
+  prometheus:
+    profiles: [monitoring]
+    image: prom/prometheus:v2.55.1
+    volumes: [./infra/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro]
+    ports: ["127.0.0.1:9090:9090"]
+    depends_on: [api, worker]
+
+  grafana:
+    profiles: [monitoring]
+    image: grafana/grafana:11.3.0
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin}
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+    volumes:
+      - ./infra/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./infra/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports: ["127.0.0.1:3000:3000"]
+    depends_on: [prometheus]
+
+  locust:
+    profiles: [load]
+    image: locustio/locust:2.32.4
+    environment:
+      API_KEY: ${LOAD_API_KEY:-}
+      SAMPLES_PATH: /mnt/models/sample_payloads.json
+    volumes:
+      - ./tests/load:/mnt/locust
+      - ./models:/mnt/models:ro
+    command: -f /mnt/locust/locustfile.py --host http://api:8000
+    ports: ["127.0.0.1:8089:8089"]
+    depends_on: [api]
+
+volumes:
+  rabbitmq-data:
+  postgres-data:
+  caddy-data:

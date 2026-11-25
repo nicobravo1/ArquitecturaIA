@@ -27,8 +27,21 @@ Streamlit (dashboard/) ◀──────────────────
 | `api/` | FastAPI: scoring, OpenAPI/Swagger, API key, rate limiting, RabbitMQ, Prometheus, Dockerfile | ✅ |
 | `worker/` | Consumidor RabbitMQ: SHAP exacto + reporte de auditoría en PostgreSQL, DLQ, reintentos, Dockerfile | ✅ |
 | `dashboard/` | Streamlit: monitor, explicaciones SHAP, prueba de transacciones, modelo; Dockerfile | ✅ |
-| `tests/` | `unit/`, `api/`, `worker/`, `dashboard/` (pytest, AWS simulado con moto, Streamlit AppTest), `integration/` (RabbitMQ + PostgreSQL reales), `load/` (Locust) | 🟡 |
-| `infra/` | docker-compose, Dockerfiles, despliegue AWS | ⏳ |
+| `tests/` | `unit/`, `api/`, `worker/`, `dashboard/` (pytest, AWS simulado con moto, Streamlit AppTest), `integration/` (RabbitMQ + PostgreSQL reales), `load/` (Locust + resumen) | ✅ |
+| `infra/` + `docker-compose.yml` | Stack completo con TLS (Caddy), Prometheus + Grafana, Locust | ✅ local · ⏳ AWS |
+
+## Todo el sistema con Docker
+
+```bash
+cp .env.example .env
+```
+
+```bash
+docker compose up -d --build
+```
+
+API con TLS en https://localhost:8443/docs, dashboard en https://localhost:8444 (detalle en
+[`infra/README.md`](infra/README.md)). Pruebas de carga y resultados: [`tests/load/README.md`](tests/load/README.md).
 
 ## Inicio rápido
 

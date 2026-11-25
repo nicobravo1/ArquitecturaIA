@@ -4,7 +4,7 @@ Flujo del *command side* (CQRS)::
 
     POST /v1/transactions/score
       → validación (Pydantic) + API key + rate limit
-      → fraud_core.build_features
+      → fraud_core.features_matrix (NumPy, sin pandas en la ruta caliente)
       → SageMaker endpoint (fallback: modelo local)
       → decisión APPROVE / REVIEW / REJECT según umbrales del modelo
       → evento a RabbitMQ (worker SHAP genera el reporte de auditoría)
@@ -27,7 +27,7 @@ from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response, s
 from fastapi.middleware.cors import CORSMiddleware
 from prometheus_client import CONTENT_TYPE_LATEST, CollectorRegistry, Counter, Histogram, generate_latest
 
-from fraud_core import build_features
+from fraud_core import features_matrix
 from fraud_core.scoring import Thresholds, decide
 
 from .config import Settings
@@ -126,7 +126,7 @@ def create_app(settings: Settings | None = None, scoring: ScoringService | None 
 
     async def score_many(request: Request, txs: list[Transaction], client: str) -> list[ScoreResponse]:
         t0 = time.perf_counter()
-        features = build_features([t.raw_features() for t in txs])
+        features = features_matrix([t.raw_features() for t in txs])
         try:
             probs, used = await asyncio.to_thread(request.app.state.scoring.predict_proba, features)
         except Exception:

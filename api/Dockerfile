@@ -25,6 +25,8 @@ EXPOSE 8000
 HEALTHCHECK --interval=15s --timeout=3s --retries=3 \
     CMD python -c "import urllib.request,sys; sys.exit(urllib.request.urlopen('http://127.0.0.1:8000/health').status!=200)"
 
-# 2 workers por contenedor (c6i/m5.large = 2 vCPU). Escalar horizontalmente con réplicas.
+# Un proceso por contenedor (WEB_CONCURRENCY=1) y escalado horizontal con réplicas:
+# así cada réplica expone sus propias métricas /metrics a Prometheus.
+ENV WEB_CONCURRENCY=1
 CMD ["uvicorn", "api.app.main:create_app", "--factory", "--host", "0.0.0.0", "--port", "8000", \
-     "--workers", "2", "--proxy-headers", "--forwarded-allow-ips", "*"]
+     "--proxy-headers", "--forwarded-allow-ips", "*"]

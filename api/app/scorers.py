@@ -10,6 +10,7 @@ import logging
 from pathlib import Path
 from typing import Protocol
 
+import numpy as np
 import pandas as pd
 
 from fraud_core import FEATURE_COLUMNS
@@ -21,7 +22,7 @@ log = logging.getLogger("api.scorers")
 class Backend(Protocol):
     name: str
 
-    def predict_proba(self, features: pd.DataFrame) -> list[float]: ...
+    def predict_proba(self, features: pd.DataFrame | np.ndarray) -> list[float]: ...
 
 
 class LocalBackend:
@@ -35,9 +36,10 @@ class LocalBackend:
         self.booster.load_model(model_path)
         self.booster.set_param({"nthread": 1})   # menor latencia por request individual
 
-    def predict_proba(self, features: pd.DataFrame) -> list[float]:
-        dm = self._xgb.DMatrix(features[FEATURE_COLUMNS], feature_names=FEATURE_COLUMNS)
-        return [float(p) for p in self.booster.predict(dm)]
+    def predict_proba(self, features: pd.DataFrame | np.ndarray) -> list[float]:
+        # inplace_predict sobre NumPy evita construir un DMatrix (~2,6 ms → ~0,1 ms)
+        X = features[FEATURE_COLUMNS].to_numpy() if isinstance(features, pd.DataFrame) else features
+        return [float(p) for p in self.booster.inplace_predict(X)]
 
 
 class SageMakerBackend:
@@ -46,7 +48,7 @@ class SageMakerBackend:
     def __init__(self, endpoint: str, thresholds: Thresholds, region: str | None = None, runtime_client=None):
         self.scorer = SageMakerScorer(endpoint, thresholds, runtime_client=runtime_client, region_name=region)
 
-    def predict_proba(self, features: pd.DataFrame) -> list[float]:
+    def predict_proba(self, features: pd.DataFrame | np.ndarray) -> list[float]:
         return self.scorer.predict_proba(features)
 
 
@@ -60,7 +62,7 @@ class ScoringService:
     def name(self) -> str:
         return self.primary.name
 
-    def predict_proba(self, features: pd.DataFrame) -> tuple[list[float], str]:
+    def predict_proba(self, features: pd.DataFrame | np.ndarray) -> tuple[list[float], str]:
         try:
             return self.primary.predict_proba(features), self.primary.name
         except Exception:

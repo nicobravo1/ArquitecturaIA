@@ -232,3 +232,15 @@ def test_consultas_de_auditoria(model_dir, audit_store, samples):
 def test_auditoria_no_configurada_responde_503(client):
     assert client.get("/v1/transactions/x/explanation", headers=H).status_code == 503
     assert client.get("/v1/transactions?limit=0", headers=H).status_code == 422
+
+
+# 19
+def test_inplace_predict_igual_a_dmatrix(model_dir, samples):
+    import xgboost as xgb
+
+    from fraud_core import FEATURE_COLUMNS, build_features, features_matrix
+    txs = samples["legit"] + samples["fraud"]
+    backend = LocalBackend(model_dir / "xgboost-model")
+    fast = backend.predict_proba(features_matrix(txs))
+    slow = backend.booster.predict(xgb.DMatrix(build_features(txs), feature_names=FEATURE_COLUMNS))
+    assert fast == pytest.approx(slow.tolist(), abs=1e-7)

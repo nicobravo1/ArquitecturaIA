@@ -40,3 +40,20 @@ def test_to_sagemaker_csv_sin_cabecera():
     lines = csv.splitlines()
     assert len(lines) == 2
     assert len(lines[0].split(",")) == len(FEATURE_COLUMNS)
+
+
+def test_features_matrix_equivale_a_build_features():
+    import numpy as np
+    from fraud_core import features_matrix
+    txs = [_tx(), _tx(Amount=3.5, Time=90_000, V3=-1.25)]
+    np.testing.assert_array_equal(features_matrix(txs), build_features(txs).to_numpy())
+    assert to_sagemaker_csv(features_matrix(txs)) == to_sagemaker_csv(build_features(txs))
+
+
+def test_features_matrix_valida():
+    from fraud_core import features_matrix
+    tx = _tx(); del tx["Time"]
+    with pytest.raises(ValueError, match="Time"):
+        features_matrix([tx])
+    with pytest.raises(ValueError, match="negativo"):
+        features_matrix([_tx(Amount=-2)])

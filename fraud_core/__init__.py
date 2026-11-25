@@ -9,5 +9,6 @@ from .features import (  # noqa: F401
     FEATURE_COLUMNS,
     TARGET_COLUMN,
     build_features,
+    features_matrix,
     to_sagemaker_csv,
 )

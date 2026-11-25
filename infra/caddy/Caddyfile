@@ -1,0 +1,20 @@
+# TLS con la CA interna de Caddy (certificados autofirmados de confianza local).
+# En AWS se reemplaza por un ALB con certificado ACM y dominio propio.
+{
+	auto_https disable_redirects
+}
+
+https://localhost:8443 {
+	tls internal
+	reverse_proxy api:8000
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		-Server
+	}
+}
+
+https://localhost:8444 {
+	tls internal
+	reverse_proxy dashboard:8501
+	header Strict-Transport-Security "max-age=31536000"
+}

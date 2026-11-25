@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 import pandas as pd
 
 from .features import build_features, to_sagemaker_csv
@@ -89,7 +90,7 @@ class SageMakerScorer:
         self.thresholds = thresholds
         self.runtime = runtime_client
 
-    def predict_proba(self, features: pd.DataFrame) -> list[float]:
+    def predict_proba(self, features: pd.DataFrame | np.ndarray) -> list[float]:
         resp = self.runtime.invoke_endpoint(
             EndpointName=self.endpoint_name,
             ContentType="text/csv",
