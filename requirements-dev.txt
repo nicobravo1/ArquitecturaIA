@@ -5,3 +5,4 @@ locust>=2.31
 moto[sagemaker,s3,sts]>=5.0
 -r api/requirements.txt
 -r worker/requirements.txt
+-r dashboard/requirements.txt

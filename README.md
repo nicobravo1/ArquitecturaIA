@@ -26,8 +26,8 @@ Streamlit (dashboard/) ◀──────────────────
 | `sagemaker_deploy/` | Despliegue del endpoint SageMaker, auto-scaling, prueba, métricas CloudWatch, teardown | ✅ |
 | `api/` | FastAPI: scoring, OpenAPI/Swagger, API key, rate limiting, RabbitMQ, Prometheus, Dockerfile | ✅ |
 | `worker/` | Consumidor RabbitMQ: SHAP exacto + reporte de auditoría en PostgreSQL, DLQ, reintentos, Dockerfile | ✅ |
-| `dashboard/` | Streamlit | ⏳ |
-| `tests/` | `unit/`, `api/`, `worker/` (pytest, AWS simulado con moto), `integration/` (RabbitMQ + PostgreSQL reales), `load/` (Locust) | 🟡 |
+| `dashboard/` | Streamlit: monitor, explicaciones SHAP, prueba de transacciones, modelo; Dockerfile | ✅ |
+| `tests/` | `unit/`, `api/`, `worker/`, `dashboard/` (pytest, AWS simulado con moto, Streamlit AppTest), `integration/` (RabbitMQ + PostgreSQL reales), `load/` (Locust) | 🟡 |
 | `infra/` | docker-compose, Dockerfiles, despliegue AWS | ⏳ |
 
 ## Inicio rápido
@@ -60,6 +60,12 @@ Worker SHAP (detalle en [`worker/README.md`](worker/README.md)):
 RABBITMQ_URL=amqp://guest:guest@localhost:5672/ \
 DATABASE_URL=postgresql+psycopg://fraud:fraud@localhost:5432/fraud_audit \
 python -m worker.app.main
+```
+
+Dashboard (detalle en [`dashboard/README.md`](dashboard/README.md)), en http://localhost:8501:
+
+```bash
+API_URL=http://localhost:8000 API_KEY=demo-key streamlit run dashboard/app.py
 ```
 
 Tests (los de integración requieren RabbitMQ y PostgreSQL; sin ellos se omiten):
