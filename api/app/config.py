@@ -33,6 +33,8 @@ class Settings:
     rabbitmq_exchange: str = field(default_factory=lambda: os.environ.get("RABBITMQ_EXCHANGE", "fraud.events"))
     rabbitmq_publish_timeout_ms: int = field(
         default_factory=lambda: int(os.environ.get("RABBITMQ_PUBLISH_TIMEOUT_MS", "50")))
+    # Almacén de auditoría escrito por el worker SHAP (lado query de CQRS)
+    database_url: str | None = field(default_factory=lambda: os.environ.get("DATABASE_URL"))
     max_batch_size: int = field(default_factory=lambda: int(os.environ.get("MAX_BATCH_SIZE", "100")))
     cors_origins: tuple[str, ...] = field(default_factory=lambda: tuple(
         o for o in os.environ.get("CORS_ORIGINS", "").split(",") if o))

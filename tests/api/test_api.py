@@ -41,11 +41,12 @@ def samples(model_dir):
     return json.loads((model_dir / "sample_payloads.json").read_text())
 
 
-def make_client(model_dir, publisher=None, scoring=None, **overrides):
+def make_client(model_dir, publisher=None, scoring=None, audit_store=None, **overrides):
     cfg = dict(model_dir=model_dir, scorer_backend="local", api_keys=frozenset({KEY}),
-               rate_limit_per_minute=1000, rabbitmq_url=None)
+               rate_limit_per_minute=1000, rabbitmq_url=None, database_url=None)
     cfg.update(overrides)
-    app = create_app(Settings(**cfg), scoring=scoring, publisher=publisher or FakePublisher())
+    app = create_app(Settings(**cfg), scoring=scoring, publisher=publisher or FakePublisher(),
+                     audit_store=audit_store)
     return TestClient(app)
 
 
@@ -59,7 +60,8 @@ def client(model_dir):
 def test_health_sin_autenticacion(client):
     r = client.get("/health")
     assert r.status_code == 200
-    assert r.json() == {"status": "ok", "model_version": "xgb-test-0001", "scorer": "local", "rabbitmq": "disabled"}
+    assert r.json() == {"status": "ok", "model_version": "xgb-test-0001", "scorer": "local",
+                        "rabbitmq": "disabled", "audit_store": "disabled"}
 
 
 # 2
@@ -197,3 +199,36 @@ def test_sin_api_keys_limita_por_ip(model_dir, samples):
         first = c.post("/v1/transactions/score", json=samples["legit"][0])
         second = c.post("/v1/transactions/score", json=samples["legit"][0])
     assert first.status_code == 200 and second.status_code == 429
+
+
+# 17
+def test_consultas_de_auditoria(model_dir, audit_store, samples):
+    from datetime import datetime, timezone
+    from fraud_core import RAW_COLUMNS
+    now = datetime.now(timezone.utc)
+    base = {"scored_at": now, "explained_at": now, "threshold": 0.6, "review_threshold": 0.3,
+            "model_version": "xgb-test-0001", "features": {c: 1.0 for c in RAW_COLUMNS}, "amount": 1.0}
+    audit_store.save(base | {"transaction_id": "tx-r", "decision": "REJECT", "fraud_probability": 0.95,
+                             "shap_values": {"V1": 2.0}, "shap_base_value": -5.0,
+                             "top_reasons": [{"feature": "V1", "label": "V1", "value": 1.0, "shap": 2.0,
+                                              "direction": "aumenta riesgo"}],
+                             "explanation_text": "Rechazada: ..."})
+    audit_store.save(base | {"transaction_id": "tx-a", "decision": "APPROVE", "fraud_probability": 0.01})
+    with make_client(model_dir, audit_store=audit_store) as c:
+        exp = c.get("/v1/transactions/tx-r/explanation", headers=H)
+        missing = c.get("/v1/transactions/nope/explanation", headers=H)
+        rejected = c.get("/v1/transactions", params={"decision": "REJECT"}, headers=H).json()
+        stats = c.get("/v1/stats", params={"hours": 1}, headers=H).json()
+        health = c.get("/health").json()
+    assert exp.status_code == 200 and exp.json()["top_reasons"][0]["feature"] == "V1"
+    assert exp.json()["shap_values"] == {"V1": 2.0}
+    assert missing.status_code == 404
+    assert [t["transaction_id"] for t in rejected] == ["tx-r"]
+    assert stats["total"] == 2 and stats["reject_rate"] == 0.5
+    assert health["audit_store"] == "connected"
+
+
+# 18
+def test_auditoria_no_configurada_responde_503(client):
+    assert client.get("/v1/transactions/x/explanation", headers=H).status_code == 503
+    assert client.get("/v1/transactions?limit=0", headers=H).status_code == 422

@@ -21,9 +21,9 @@ import logging
 import time
 import uuid
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
-from fastapi import Depends, FastAPI, HTTPException, Request, Response, status
+from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from prometheus_client import CONTENT_TYPE_LATEST, CollectorRegistry, Counter, Histogram, generate_latest
 
@@ -32,7 +32,10 @@ from fraud_core.scoring import Thresholds, decide
 
 from .config import Settings
 from .events import Publisher, build_publisher
-from .schemas import BatchRequest, BatchResponse, Health, ModelInfo, ScoreResponse, Transaction
+from .schemas import (
+    BatchRequest, BatchResponse, Decision, Explanation, Health, ModelInfo, ScoreResponse, Stats,
+    Transaction, TransactionSummary,
+)
 from .scorers import ScoringService, build_scoring_service
 from .security import SlidingWindowRateLimiter, require_api_key
 
@@ -41,6 +44,7 @@ log = logging.getLogger("api")
 
 TAGS = [
     {"name": "scoring", "description": "Evaluación de transacciones en tiempo real"},
+    {"name": "auditoría", "description": "Consultas sobre los reportes SHAP generados por el worker (CQRS)"},
     {"name": "modelo", "description": "Información del modelo desplegado"},
     {"name": "operación", "description": "Salud y métricas (Prometheus)"},
 ]
@@ -63,7 +67,7 @@ class Metrics:
 
 
 def create_app(settings: Settings | None = None, scoring: ScoringService | None = None,
-               publisher: Publisher | None = None) -> FastAPI:
+               publisher: Publisher | None = None, audit_store=None) -> FastAPI:
     settings = settings or Settings()
     metadata = settings.metadata()
     thresholds = Thresholds.from_metadata(metadata)
@@ -72,6 +76,10 @@ def create_app(settings: Settings | None = None, scoring: ScoringService | None 
     async def lifespan(app: FastAPI):
         app.state.scoring = scoring or build_scoring_service(settings, thresholds)
         app.state.publisher = publisher or build_publisher(settings)
+        app.state.audit = audit_store
+        if app.state.audit is None and settings.database_url:
+            from fraud_core.audit_store import AuditStore
+            app.state.audit = AuditStore(settings.database_url)
         await app.state.publisher.start()
         log.info("API lista | modelo %s | backend %s", metadata["model_version"], app.state.scoring.name)
         yield
@@ -170,6 +178,47 @@ def create_app(settings: Settings | None = None, scoring: ScoringService | None 
             results = await score_many(request, body.transactions, client)
         return BatchResponse(results=results, count=len(results))
 
+    def audit_store_or_503(request: Request):
+        store = request.app.state.audit
+        if store is None:
+            raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Almacén de auditoría no configurado")
+        return store
+
+    async def audit_call(fn, *args, **kwargs):
+        try:
+            return await asyncio.to_thread(fn, *args, **kwargs)
+        except Exception:
+            log.exception("Error consultando el almacén de auditoría")
+            raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Almacén de auditoría no disponible") from None
+
+    @app.get("/v1/transactions/{transaction_id}/explanation", response_model=Explanation, tags=["auditoría"],
+             summary="Reporte SHAP de una transacción",
+             responses={404: {"description": "Aún no procesada por el worker o inexistente"}})
+    async def get_explanation(transaction_id: str, request: Request, _: str = Depends(require_api_key)):
+        store = audit_store_or_503(request)
+        rec = await audit_call(store.get, transaction_id)
+        if rec is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND,
+                                "Explicación no disponible (inexistente o aún en cola del worker)")
+        return rec
+
+    @app.get("/v1/transactions", response_model=list[TransactionSummary], tags=["auditoría"],
+             summary="Transacciones auditadas recientes")
+    async def list_transactions(request: Request, decision: Decision | None = None,
+                                limit: int = Query(50, ge=1, le=500),
+                                hours: float | None = Query(None, gt=0, le=24 * 90),
+                                _: str = Depends(require_api_key)):
+        store = audit_store_or_503(request)
+        since = datetime.now(timezone.utc) - timedelta(hours=hours) if hours else None
+        return await audit_call(store.list_recent, limit=limit, decision=decision, since=since)
+
+    @app.get("/v1/stats", response_model=Stats, tags=["auditoría"], summary="Resumen de decisiones")
+    async def stats(request: Request, hours: float = Query(24, gt=0, le=24 * 90),
+                    _: str = Depends(require_api_key)):
+        store = audit_store_or_503(request)
+        data = await audit_call(store.stats, since=datetime.now(timezone.utc) - timedelta(hours=hours))
+        return Stats(window_hours=hours, **data)
+
     @app.get("/v1/model", response_model=ModelInfo, tags=["modelo"], summary="Modelo y umbrales en uso")
     async def model_info(request: Request, _: str = Depends(require_api_key)):
         return ModelInfo(
@@ -184,9 +233,12 @@ def create_app(settings: Settings | None = None, scoring: ScoringService | None 
     async def health(request: Request):
         pub = request.app.state.publisher
         rabbit = "disabled" if not settings.rabbitmq_url else ("connected" if pub.connected else "disconnected")
-        return Health(status="ok" if rabbit != "disconnected" else "degraded",
+        store = request.app.state.audit
+        audit = "disabled" if store is None else (
+            "connected" if await asyncio.to_thread(store.ping) else "disconnected")
+        return Health(status="degraded" if "disconnected" in (rabbit, audit) else "ok",
                       model_version=metadata["model_version"], scorer=request.app.state.scoring.name,
-                      rabbitmq=rabbit)
+                      rabbitmq=rabbit, audit_store=audit)
 
     @app.get("/metrics", tags=["operación"], summary="Métricas Prometheus", include_in_schema=True)
     async def prometheus_metrics():

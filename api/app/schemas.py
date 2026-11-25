@@ -92,3 +92,50 @@ class Health(BaseModel):
     model_version: str
     scorer: str
     rabbitmq: Literal["connected", "disconnected", "disabled"]
+    audit_store: Literal["connected", "disconnected", "disabled"]
+
+
+class Reason(BaseModel):
+    feature: str
+    label: str
+    value: float
+    shap: float = Field(..., description="Contribución en log-odds (positivo = aumenta el riesgo)")
+    direction: str
+
+
+class TransactionSummary(BaseModel):
+    transaction_id: str
+    scored_at: datetime
+    explained_at: datetime
+    decision: Decision
+    fraud_probability: float
+    threshold: float
+    review_threshold: float
+    model_version: str
+    scorer: str | None = None
+    card_masked: str | None = None
+    amount: float | None = None
+    top_reasons: list[Reason] | None = None
+    explanation_text: str | None = None
+    explain_ms: float | None = None
+
+
+class Explanation(TransactionSummary):
+    """Reporte de auditoría completo de una transacción."""
+    features: dict[str, float]
+    shap_base_value: float | None = None
+    shap_values: dict[str, float] | None = None
+
+
+class DecisionStats(BaseModel):
+    count: int
+    avg_probability: float
+    amount: float
+
+
+class Stats(BaseModel):
+    window_hours: float
+    total: int
+    reject_rate: float
+    avg_explain_ms: float | None
+    by_decision: dict[str, DecisionStats]

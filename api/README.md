@@ -20,8 +20,11 @@ POST /v1/transactions/score
 |---|---|---|---|
 | POST | `/v1/transactions/score` | API key | Evalúa una transacción |
 | POST | `/v1/transactions/score/batch` | API key | Evalúa hasta `MAX_BATCH_SIZE` transacciones |
+| GET | `/v1/transactions/{id}/explanation` | API key | Reporte SHAP de auditoría (generado por el worker; 404 si aún está en cola) |
+| GET | `/v1/transactions?decision=&limit=&hours=` | API key | Transacciones auditadas recientes |
+| GET | `/v1/stats?hours=` | API key | Conteos, tasa de rechazo, montos y tiempo SHAP por decisión |
 | GET | `/v1/model` | API key | Versión del modelo, umbrales y métricas de test |
-| GET | `/health` | — | Liveness/readiness (estado de RabbitMQ) |
+| GET | `/health` | — | Liveness/readiness (estado de RabbitMQ y de la BD de auditoría) |
 | GET | `/metrics` | — | Métricas Prometheus (latencia, decisiones, eventos, errores, distribución de probabilidades) |
 
 Códigos de error: `401` API key inválida · `413` lote demasiado grande · `422` payload inválido ·
@@ -66,6 +69,7 @@ docker run -p 8000:8000 -e API_KEYS=demo-key -e SCORER_BACKEND=sagemaker \
 | `RABBITMQ_URL` | *(vacío = sin eventos)* | p. ej. `amqp://user:pass@rabbitmq:5672/` (`amqps://` para TLS) |
 | `RABBITMQ_EXCHANGE` | `fraud.events` | Exchange topic |
 | `RABBITMQ_PUBLISH_TIMEOUT_MS` | `50` | Tiempo máximo de publicación (no bloquear el pago) |
+| `DATABASE_URL` | *(vacío = consultas de auditoría deshabilitadas)* | Misma BD que escribe el worker |
 | `MAX_BATCH_SIZE` | `100` | Tamaño máximo de lote |
 | `MODEL_DIR` | `models/` | Carpeta con `metadata.json` y `xgboost-model` |
 | `CORS_ORIGINS` | *(vacío)* | Orígenes permitidos (p. ej. el dashboard) |

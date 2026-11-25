@@ -19,8 +19,7 @@ from typing import Any, Protocol
 
 log = logging.getLogger("api.events")
 
-ROUTING_KEY = "transaction.scored"
-EXPLANATION_QUEUE = "shap.explanations"
+from fraud_core.messaging import EXPLANATION_QUEUE, ROUTING_KEY, declare_topology  # noqa: F401
 
 
 class Publisher(Protocol):
@@ -63,15 +62,7 @@ class RabbitPublisher:
             # connect_robust reconecta automáticamente si el broker se reinicia
             self._conn = await aio_pika.connect_robust(self.url, timeout=5)
             self._channel = await self._conn.channel(publisher_confirms=True)
-            self._exchange = await self._channel.declare_exchange(
-                self.exchange_name, aio_pika.ExchangeType.TOPIC, durable=True)
-            dlx = await self._channel.declare_exchange(f"{self.exchange_name}.dlx",
-                                                       aio_pika.ExchangeType.FANOUT, durable=True)
-            dlq = await self._channel.declare_queue(f"{EXPLANATION_QUEUE}.dlq", durable=True)
-            await dlq.bind(dlx)
-            queue = await self._channel.declare_queue(EXPLANATION_QUEUE, durable=True, arguments={
-                "x-dead-letter-exchange": f"{self.exchange_name}.dlx"})
-            await queue.bind(self._exchange, routing_key=ROUTING_KEY)
+            self._exchange, _ = await declare_topology(self._channel, self.exchange_name)
             log.info("Conectado a RabbitMQ, exchange=%s", self.exchange_name)
         except Exception:
             log.exception("No se pudo conectar a RabbitMQ; se reintentará al publicar")

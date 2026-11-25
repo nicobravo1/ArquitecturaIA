@@ -25,9 +25,9 @@ Streamlit (dashboard/) ◀──────────────────
 | `models/` | Artefactos generados (`xgboost-model`, `model.tar.gz`, `metadata.json`, `deployment.json`) | generado |
 | `sagemaker_deploy/` | Despliegue del endpoint SageMaker, auto-scaling, prueba, métricas CloudWatch, teardown | ✅ |
 | `api/` | FastAPI: scoring, OpenAPI/Swagger, API key, rate limiting, RabbitMQ, Prometheus, Dockerfile | ✅ |
-| `worker/` | Consumidor RabbitMQ que calcula SHAP | ⏳ |
+| `worker/` | Consumidor RabbitMQ: SHAP exacto + reporte de auditoría en PostgreSQL, DLQ, reintentos, Dockerfile | ✅ |
 | `dashboard/` | Streamlit | ⏳ |
-| `tests/` | `unit/`, `api/` (pytest, AWS simulado con moto), `integration/` (RabbitMQ real), `load/` (Locust) | 🟡 |
+| `tests/` | `unit/`, `api/`, `worker/` (pytest, AWS simulado con moto), `integration/` (RabbitMQ + PostgreSQL reales), `load/` (Locust) | 🟡 |
 | `infra/` | docker-compose, Dockerfiles, despliegue AWS | ⏳ |
 
 ## Inicio rápido
@@ -54,11 +54,23 @@ API (detalle en [`api/README.md`](api/README.md)), Swagger en http://localhost:8
 SCORER_BACKEND=local API_KEYS=demo-key uvicorn api.app.main:create_app --factory --port 8000
 ```
 
-Tests (`-m integration` requiere RabbitMQ):
+Worker SHAP (detalle en [`worker/README.md`](worker/README.md)):
 
 ```bash
-pytest                                                          # unitarios + API
-RABBITMQ_URL=amqp://guest:guest@localhost:5672/ pytest -m integration
+RABBITMQ_URL=amqp://guest:guest@localhost:5672/ \
+DATABASE_URL=postgresql+psycopg://fraud:fraud@localhost:5432/fraud_audit \
+python -m worker.app.main
+```
+
+Tests (los de integración requieren RabbitMQ y PostgreSQL; sin ellos se omiten):
+
+```bash
+pytest
+```
+
+```bash
+RABBITMQ_URL=amqp://guest:guest@localhost:5672/ \
+DATABASE_URL=postgresql+psycopg://fraud:fraud@localhost:5432/fraud_audit pytest
 ```
 
 Variables opcionales del notebook: `DATA_PATH` (ruta alternativa del CSV), `N_TRIALS` (configuraciones a probar, por defecto 12), `MLFLOW_TRACKING_URI`.
