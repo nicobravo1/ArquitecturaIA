@@ -1,0 +1,22 @@
+# Datos (dataset de Kaggle ~150 MB, no se versiona en git)
+data/*
+!data/README.md
+# Artefactos del modelo (se publican en S3 / MLflow)
+models/*
+!models/.gitkeep
+mlruns/
+mlartifacts/
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.ipynb_checkpoints/
+*.egg-info/
+# Entorno / secretos
+.env
+*.pem
+.DS_Store
+# Reportes de carga
+tests/load/reports/

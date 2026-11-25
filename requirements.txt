@@ -1,0 +1,11 @@
+# Entrenamiento / notebook
+# xgboost fijado a la versión del contenedor XGBoost de SageMaker usado en el despliegue
+xgboost==3.0.5
+pandas>=2.2
+numpy>=1.26
+scikit-learn>=1.5
+shap>=0.46
+matplotlib>=3.8
+seaborn>=0.13
+jupyter
+mlflow>=2.16
