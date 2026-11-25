@@ -23,3 +23,7 @@ tests/load/reports/
 
 # Base de auditoría local (SQLite)
 audit.db
+
+# Despliegue en AWS (generados por infra/aws/ec2.py)
+infra/aws/.state.json
+infra/aws/.secrets.env

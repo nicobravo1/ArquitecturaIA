@@ -108,3 +108,23 @@ class _FutureDatetime:
     @classmethod
     def now(cls, tz=None):
         return cls._dt.now(tz) + cls._td(hours=1)
+
+
+def test_cloudwatch_metrics_endpoint_y_ec2(aws, monkeypatch):
+    from datetime import datetime, timedelta, timezone
+
+    from sagemaker_deploy import cloudwatch_metrics as cwm
+    # moto no implementa estadísticas percentiles (p99); CloudWatch real sí
+    monkeypatch.setattr(cwm, "METRICS", [m for m in cwm.METRICS if not m[2].startswith("p")])
+    ts = datetime.now(timezone.utc) - timedelta(minutes=2)
+    cw = aws.client("cloudwatch")
+    cw.put_metric_data(Namespace="AWS/SageMaker", MetricData=[{
+        "MetricName": "Invocations", "Value": 42, "Timestamp": ts,
+        "Dimensions": [{"Name": "EndpointName", "Value": "ep"}, {"Name": "VariantName", "Value": "AllTraffic"}]}])
+    cw.put_metric_data(Namespace="AWS/EC2", MetricData=[{
+        "MetricName": "CPUUtilization", "Value": 37.5, "Timestamp": ts,
+        "Dimensions": [{"Name": "InstanceId", "Value": "i-123"}]}])
+    rows = cwm.collect(cw, "ep", hours=1, period=60, instance_id="i-123")
+    summary = cwm.summarize(rows)
+    assert summary["endpoint.Invocations_Sum_count"] == 42
+    assert summary["ec2.CPUUtilization_Average_%"] == 37.5

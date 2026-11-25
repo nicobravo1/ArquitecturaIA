@@ -1,0 +1,44 @@
+# Override para EC2 en AWS (lo usa el user-data de infra/aws/ec2.py):
+#   docker compose -f docker-compose.yml -f infra/aws/docker-compose.aws.yml up -d --build
+# - La API usa el endpoint de SageMaker (credenciales del instance profile vía IMDSv2).
+# - Logs de los contenedores a CloudWatch Logs (/pagoseguro/fraud).
+# - Caddy con TLS para la IP pública y autenticación básica en el dashboard.
+
+x-cloudwatch: &cloudwatch
+  driver: awslogs
+  options:
+    awslogs-region: ${AWS_REGION:-us-east-1}
+    awslogs-group: /pagoseguro/fraud
+    awslogs-create-group: "true"
+    tag: "{{.Name}}"
+
+services:
+  api:
+    environment:
+      SCORER_BACKEND: sagemaker
+      SAGEMAKER_ENDPOINT: ${SAGEMAKER_ENDPOINT:?define SAGEMAKER_ENDPOINT}
+      AWS_REGION: ${AWS_REGION:-us-east-1}
+      LOCAL_FALLBACK: "true"
+    logging: *cloudwatch
+
+  worker:
+    logging: *cloudwatch
+
+  dashboard:
+    logging: *cloudwatch
+
+  rabbitmq:
+    logging: *cloudwatch
+
+  postgres:
+    logging: *cloudwatch
+
+  proxy:
+    environment:
+      PUBLIC_HOST: ${PUBLIC_HOST:?define PUBLIC_HOST}
+      DASHBOARD_USER: ${DASHBOARD_USER:-analista}
+      DASHBOARD_PASSWORD_HASH: ${DASHBOARD_PASSWORD_HASH:?define DASHBOARD_PASSWORD_HASH}
+    volumes: !override
+      - ./infra/aws/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+    logging: *cloudwatch

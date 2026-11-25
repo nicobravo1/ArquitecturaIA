@@ -1,0 +1,27 @@
+# TLS para la IP pública de la instancia con la CA interna de Caddy (el navegador
+# advierte que el certificado no es de una CA pública). Con dominio propio basta
+# con reemplazar las direcciones por el dominio y quitar `tls internal` (Let's Encrypt),
+# o usar un ALB con certificado ACM.
+{
+	auto_https disable_redirects
+	default_sni {$PUBLIC_HOST}
+}
+
+https://{$PUBLIC_HOST}:8443 {
+	tls internal
+	reverse_proxy api:8000
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		-Server
+	}
+}
+
+https://{$PUBLIC_HOST}:8444 {
+	tls internal
+	# El dashboard muestra datos de auditoría: acceso con usuario y contraseña
+	basic_auth {
+		{$DASHBOARD_USER} {$DASHBOARD_PASSWORD_HASH}
+	}
+	reverse_proxy dashboard:8501
+	header Strict-Transport-Security "max-age=31536000"
+}

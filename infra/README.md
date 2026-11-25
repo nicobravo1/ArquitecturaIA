@@ -39,3 +39,16 @@ docker compose up -d --scale api=3 --scale worker=2
   `127.0.0.1`.
 - **Grafana** viene con la fuente Prometheus y el panel *PagoSeguro · Detección de fraude*
   ya aprovisionados (`infra/grafana/`).
+
+## AWS (EC2 + SageMaker)
+
+`infra/aws/ec2.py` crea una instancia EC2 (Amazon Linux 2023, `LabInstanceProfile`) que
+levanta este mismo compose con el override `infra/aws/docker-compose.aws.yml`:
+
+- la API usa el **endpoint de SageMaker** (credenciales del rol vía IMDSv2, sin claves en el servidor);
+- logs de todos los contenedores a **CloudWatch Logs** (`/pagoseguro/fraud`);
+- Caddy con TLS para la IP pública y **usuario/clave** en el dashboard (`infra/aws/Caddyfile`);
+- servicio systemd `pagoseguro.service` que en cada arranque detecta la IP pública (cambia
+  cuando AWS Academy detiene y reinicia la instancia) y levanta el stack.
+
+Paso a paso: [`docs/GUIA_DESPLIEGUE_AWS.md`](../docs/GUIA_DESPLIEGUE_AWS.md).

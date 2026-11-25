@@ -28,7 +28,24 @@ Streamlit (dashboard/) ◀──────────────────
 | `worker/` | Consumidor RabbitMQ: SHAP exacto + reporte de auditoría en PostgreSQL, DLQ, reintentos, Dockerfile | ✅ |
 | `dashboard/` | Streamlit: monitor, explicaciones SHAP, prueba de transacciones, modelo; Dockerfile | ✅ |
 | `tests/` | `unit/`, `api/`, `worker/`, `dashboard/` (pytest, AWS simulado con moto, Streamlit AppTest), `integration/` (RabbitMQ + PostgreSQL reales), `load/` (Locust + resumen) | ✅ |
-| `infra/` + `docker-compose.yml` | Stack completo con TLS (Caddy), Prometheus + Grafana, Locust | ✅ local · ⏳ AWS |
+| `infra/` + `docker-compose.yml` | Stack completo con TLS (Caddy), Prometheus + Grafana, Locust; despliegue en EC2 (`infra/aws/`) | ✅ |
+
+## Despliegue en AWS
+
+Guía paso a paso para AWS Academy, con el checklist de evidencias de la pauta:
+**[`docs/GUIA_DESPLIEGUE_AWS.md`](docs/GUIA_DESPLIEGUE_AWS.md)**.
+
+```bash
+python -m sagemaker_deploy.deploy     # modelo → endpoint SageMaker (auto-scaling)
+```
+
+```bash
+python -m infra.aws.ec2 up            # API + worker + dashboard + RabbitMQ + PostgreSQL en EC2
+```
+
+```bash
+python -m infra.aws.ec2 down && python -m sagemaker_deploy.teardown --yes   # apagar todo
+```
 
 ## Todo el sistema con Docker
 

@@ -84,7 +84,7 @@ services:
 
   proxy:
     # Terminación TLS (en AWS: ALB + certificado ACM)
-    image: caddy:2-alpine
+    image: caddy:2.8.4-alpine
     ports: ["8443:8443", "8444:8444"]
     volumes:
       - ./infra/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
