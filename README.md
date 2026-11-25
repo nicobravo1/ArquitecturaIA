@@ -22,12 +22,12 @@ Streamlit (dashboard/) ◀──────────────────
 | `data/` | `creditcard.csv` (Kaggle, no versionado) | ✅ instrucciones |
 | `fraud_core/` | Ingeniería de variables compartida (notebook, API, worker) | ✅ |
 | `notebooks/` | `01_entrenamiento_xgboost.ipynb` – EDA, entrenamiento, umbral, métricas, SHAP, export | ✅ |
-| `models/` | Artefactos generados (`xgboost-model`, `model.tar.gz`, `metadata.json`) | generado |
-| `sagemaker/` | Despliegue del endpoint + auto-scaling | ⏳ |
+| `models/` | Artefactos generados (`xgboost-model`, `model.tar.gz`, `metadata.json`, `deployment.json`) | generado |
+| `sagemaker_deploy/` | Despliegue del endpoint SageMaker, auto-scaling, prueba, métricas CloudWatch, teardown | ✅ |
 | `api/` | FastAPI (OpenAPI, API key, rate limiting) | ⏳ |
 | `worker/` | Consumidor RabbitMQ que calcula SHAP | ⏳ |
 | `dashboard/` | Streamlit | ⏳ |
-| `tests/` | `unit/` (pytest) y `load/` (Locust) | 🟡 |
+| `tests/` | `unit/` (pytest, AWS simulado con moto) y `load/` (Locust) | 🟡 |
 | `infra/` | docker-compose, Dockerfiles, despliegue AWS | ⏳ |
 
 ## Inicio rápido
@@ -38,6 +38,14 @@ pip install -r requirements-dev.txt
 kaggle datasets download -d mlg-ulb/creditcardfraud -p data --unzip
 jupyter notebook notebooks/01_entrenamiento_xgboost.ipynb   # Run All
 pytest
+```
+
+Despliegue en SageMaker (detalle en [`sagemaker_deploy/README.md`](sagemaker_deploy/README.md)):
+
+```bash
+python -m sagemaker_deploy.deploy            # crea el endpoint pagoseguro-fraud
+python -m sagemaker_deploy.invoke_test       # verifica predicciones y latencia
+python -m sagemaker_deploy.teardown --yes    # elimina el endpoint al terminar
 ```
 
 Variables opcionales del notebook: `DATA_PATH` (ruta alternativa del CSV), `N_TRIALS` (configuraciones a probar, por defecto 12), `MLFLOW_TRACKING_URI`.
