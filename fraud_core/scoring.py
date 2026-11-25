@@ -21,10 +21,17 @@ from .features import build_features, to_sagemaker_csv
 APPROVE, REVIEW, REJECT = "APPROVE", "REVIEW", "REJECT"
 
 
+HIGH_AMOUNT_RULE = "high_amount"
+
+
 @dataclass(frozen=True)
 class Thresholds:
     reject: float
     review: float
+    # Regla de monto alto: transacciones con Amount >= este valor van a verificación
+    # adicional (REVIEW) aunque el modelo las considere de bajo riesgo. Se elige en el
+    # notebook sobre validación con un presupuesto de fricción. None = sin regla.
+    high_amount: float | None = None
 
     @classmethod
     def from_metadata(cls, metadata: dict[str, Any]) -> "Thresholds":
@@ -32,16 +39,30 @@ class Thresholds:
         review = float(metadata.get("review_threshold", reject))
         if not 0 <= review <= reject <= 1:
             raise ValueError(f"Umbrales inválidos: review={review}, reject={reject}")
-        return cls(reject=reject, review=review)
+        high = metadata.get("high_amount_review")
+        return cls(reject=reject, review=review, high_amount=None if high is None else float(high))
 
 
-def decide(probability: float, thresholds: Thresholds) -> str:
-    """APPROVE / REVIEW (step-up auth o revisión manual) / REJECT."""
+def decide_with_reason(probability: float, thresholds: Thresholds,
+                       amount: float | None = None) -> tuple[str, str | None]:
+    """Decisión y regla que la provocó (``None`` si fue solo el puntaje del modelo).
+
+    * REJECT solo por el modelo (nunca se bloquea por monto).
+    * REVIEW (verificación adicional / analista) si el puntaje está en la zona de
+      revisión **o** si aplica la regla de monto alto.
+    """
     if probability >= thresholds.reject:
-        return REJECT
+        return REJECT, None
     if probability >= thresholds.review:
-        return REVIEW
-    return APPROVE
+        return REVIEW, None
+    if thresholds.high_amount is not None and amount is not None and amount >= thresholds.high_amount:
+        return REVIEW, HIGH_AMOUNT_RULE
+    return APPROVE, None
+
+
+def decide(probability: float, thresholds: Thresholds, amount: float | None = None) -> str:
+    """APPROVE / REVIEW (step-up auth o revisión manual) / REJECT."""
+    return decide_with_reason(probability, thresholds, amount)[0]
 
 
 _NUMBER = re.compile(r"[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?")
@@ -109,7 +130,7 @@ class SageMakerScorer:
         probs = self.predict_proba(features)
         latency_ms = (time.perf_counter() - t0) * 1000
         return [
-            {"fraud_probability": p, "decision": decide(p, self.thresholds),
+            {"fraud_probability": p, "decision": decide(p, self.thresholds, float(amt)),
              "model_latency_ms": latency_ms}
-            for p in probs
+            for p, amt in zip(probs, features["Amount"])
         ]

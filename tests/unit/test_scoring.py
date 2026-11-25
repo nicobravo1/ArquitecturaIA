@@ -66,3 +66,15 @@ def test_scorer_serializa_csv_y_decide():
 def test_scorer_detecta_respuesta_incompleta():
     with pytest.raises(ValueError, match="1 predicciones para 2"):
         SageMakerScorer("ep", TH, runtime_client=FakeRuntime([0.1])).score([_tx(), _tx()])
+
+
+def test_regla_monto_alto_envia_a_revision_pero_nunca_bloquea():
+    from fraud_core.scoring import decide_with_reason
+    th = Thresholds(reject=0.8, review=0.4, high_amount=1000)
+    assert decide_with_reason(0.01, th, 999.99) == (APPROVE, None)
+    assert decide_with_reason(0.01, th, 1000) == (REVIEW, "high_amount")
+    assert decide_with_reason(0.5, th, 5000) == (REVIEW, None)        # ya era REVIEW por el modelo
+    assert decide_with_reason(0.9, th, 5000) == (REJECT, None)        # el monto no cambia un rechazo
+    assert decide_with_reason(0.01, Thresholds(0.8, 0.4), 10**6) == (APPROVE, None)   # sin regla
+    assert Thresholds.from_metadata({"threshold": 0.8, "review_threshold": 0.4,
+                                     "high_amount_review": 750}).high_amount == 750

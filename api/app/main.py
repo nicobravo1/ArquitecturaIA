@@ -28,7 +28,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from prometheus_client import CONTENT_TYPE_LATEST, CollectorRegistry, Counter, Histogram, generate_latest
 
 from fraud_core import features_matrix
-from fraud_core.scoring import Thresholds, decide
+from fraud_core.scoring import Thresholds, decide_with_reason
 
 from .config import Settings
 from .events import Publisher, build_publisher
@@ -138,18 +138,18 @@ def create_app(settings: Settings | None = None, scoring: ScoringService | None 
         latency_ms = (time.perf_counter() - t0) * 1000
         responses, events = [], []
         for tx, p in zip(txs, probs):
-            decision = decide(p, thresholds)
+            decision, rule = decide_with_reason(p, thresholds, tx.Amount)
             tx_id = tx.transaction_id or f"tx-{uuid.uuid4().hex[:16]}"
             responses.append(dict(
                 transaction_id=tx_id, decision=decision, fraud_probability=round(p, 6),
                 threshold=thresholds.reject, review_threshold=thresholds.review,
                 model_version=metadata["model_version"], scorer=used, latency_ms=round(latency_ms, 2),
-                card_masked=tx.masked_pan(), scored_at=now))
+                card_masked=tx.masked_pan(), scored_at=now, rule=rule))
             events.append({
                 "event_type": "transaction.scored", "transaction_id": tx_id, "scored_at": now.isoformat(),
                 "decision": decision, "fraud_probability": p, "threshold": thresholds.reject,
                 "review_threshold": thresholds.review, "model_version": metadata["model_version"],
-                "scorer": used, "client": client, "card_masked": tx.masked_pan(),
+                "scorer": used, "client": client, "card_masked": tx.masked_pan(), "rule": rule,
                 "features": tx.raw_features(),   # sin PAN
             })
             metrics.decisions.labels(decision, used).inc()
@@ -223,7 +223,8 @@ def create_app(settings: Settings | None = None, scoring: ScoringService | None 
     async def model_info(request: Request, _: str = Depends(require_api_key)):
         return ModelInfo(
             model_version=metadata["model_version"], threshold=thresholds.reject,
-            review_threshold=thresholds.review, threshold_policy=metadata.get("threshold_policy"),
+            review_threshold=thresholds.review, high_amount_review=thresholds.high_amount,
+            threshold_policy=metadata.get("threshold_policy"),
             feature_columns=metadata["feature_columns"], metrics_test=metadata.get("metrics_test", {}),
             scorer_backend=request.app.state.scoring.name, trained_at=metadata.get("trained_at"),
             sagemaker_endpoint=settings.sagemaker_endpoint or settings.deployment().get("endpoint_name")

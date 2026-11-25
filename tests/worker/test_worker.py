@@ -117,3 +117,9 @@ def test_error_transitorio_reintenta_y_luego_dlq(model_dir, explainer, scored_ev
 
     last = FakeMessage(scored_event("fraud"), headers={"x-retries": 2})
     assert asyncio.run(w.on_message(last, ch)) == "failed" and last.rejected
+
+
+def test_texto_regla_monto_alto():
+    t = explanation_text("REVIEW", 0.002, 0.6, [{"label": "V14", "value": 0.1, "shap": -0.4}],
+                         rule="high_amount", amount=1096.99)
+    assert t.startswith("Enviada a verificación por regla de monto alto (monto 1,096.99)")

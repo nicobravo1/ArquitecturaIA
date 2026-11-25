@@ -61,5 +61,6 @@ def build_record(event: dict[str, Any], explainer, explain_decisions: frozenset[
             shap_base_value=exp["shap_base_value"], shap_values=exp["shap_values"],
             top_reasons=exp["top_reasons"], explain_ms=round(exp["explain_ms"], 3),
             explanation_text=explanation_text(event["decision"], record["fraud_probability"],
-                                              record["threshold"], exp["top_reasons"]))
+                                              record["threshold"], exp["top_reasons"],
+                                              rule=event.get("rule"), amount=record["amount"]))
     return record

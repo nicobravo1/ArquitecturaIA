@@ -64,9 +64,12 @@ class ShapExplainer:
         }
 
 
-def explanation_text(decision: str, probability: float, threshold: float, reasons: list[dict]) -> str:
+def explanation_text(decision: str, probability: float, threshold: float, reasons: list[dict],
+                     rule: str | None = None, amount: float | None = None) -> str:
     """Resumen legible para el analista / auditor (CMF)."""
     verbo = {"REJECT": "Rechazada", "REVIEW": "Enviada a revisión", "APPROVE": "Aprobada"}[decision]
+    if rule == "high_amount":
+        verbo = f"Enviada a verificación por regla de monto alto (monto {amount:,.2f})"
     up = [r for r in reasons if r["shap"] > 0]
     down = [r for r in reasons if r["shap"] <= 0]
     fmt = lambda rs: "; ".join(f"{r['label']}={r['value']:.2f} ({r['shap']:+.2f})" for r in rs)  # noqa: E731

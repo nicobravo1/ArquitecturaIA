@@ -67,6 +67,8 @@ class ScoreResponse(BaseModel):
     explanation_status: Literal["queued", "unavailable"] = Field(
         ..., description="queued: el worker SHAP generará el reporte de auditoría")
     card_masked: str | None = None
+    rule: Literal["high_amount"] | None = Field(
+        None, description="Regla de negocio que envió a REVIEW (null = decisión solo por el modelo)")
     scored_at: datetime
 
 
@@ -79,6 +81,7 @@ class ModelInfo(BaseModel):
     model_version: str
     threshold: float
     review_threshold: float
+    high_amount_review: float | None = Field(None, description="Monto desde el cual se pide verificación adicional")
     threshold_policy: str | None = None
     feature_columns: list[str]
     metrics_test: dict[str, float] = {}

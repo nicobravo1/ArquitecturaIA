@@ -244,3 +244,17 @@ def test_inplace_predict_igual_a_dmatrix(model_dir, samples):
     fast = backend.predict_proba(features_matrix(txs))
     slow = backend.booster.predict(xgb.DMatrix(build_features(txs), feature_names=FEATURE_COLUMNS))
     assert fast == pytest.approx(slow.tolist(), abs=1e-7)
+
+
+# 20
+def test_regla_monto_alto_en_la_api(model_dir, samples):
+    meta = json.loads((model_dir / "metadata.json").read_text())
+    (model_dir / "metadata.json").write_text(json.dumps(meta | {"high_amount_review": 500.0}))
+    pub = FakePublisher()
+    with make_client(model_dir, publisher=pub) as c:
+        normal = c.post("/v1/transactions/score", json=samples["legit"][0], headers=H).json()
+        alto = c.post("/v1/transactions/score", json=samples["legit"][0] | {"Amount": 800.0}, headers=H).json()
+        info = c.get("/v1/model", headers=H).json()
+    assert normal["decision"] == "APPROVE" and normal["rule"] is None
+    assert alto["decision"] == "REVIEW" and alto["rule"] == "high_amount"
+    assert pub.events[1]["rule"] == "high_amount" and info["high_amount_review"] == 500.0

@@ -236,6 +236,9 @@ with tab_test:
             c[2].metric("Latencia API", f"{res['latency_ms']:.1f} ms",
                         help=f"Tiempo de procesamiento en la API. Ida y vuelta desde el dashboard: {rtt:.0f} ms")
             c[3].metric("Backend", res["scorer"])
+            if res.get("rule") == "high_amount":
+                st.info("Enviada a verificación por la **regla de monto alto**: el modelo la considera de bajo "
+                        "riesgo, pero el monto supera el límite configurado.", icon="💳")
             with st.expander("Respuesta JSON de la API"):
                 st.json(res)
             if res["explanation_status"] == "queued" and res["decision"] != "APPROVE":
@@ -262,7 +265,9 @@ with tab_model:
         c[0].metric("Umbral de rechazo", f"{model['threshold']:.3f}")
         c[1].metric("Umbral de revisión", f"{model['review_threshold']:.3f}")
         c[2].metric("Backend", model["scorer_backend"])
-        c[3].metric("Endpoint SageMaker", model.get("sagemaker_endpoint") or "—")
+        c[3].metric("Verificación si monto ≥", f"${model['high_amount_review']:,.0f}"
+                    if model.get("high_amount_review") else "sin regla")
+        st.caption(f"Endpoint SageMaker: `{model.get('sagemaker_endpoint') or '—'}`")
         st.caption(f"Política de umbral: `{model.get('threshold_policy')}` · entrenado {model.get('trained_at')}")
         m = model.get("metrics_test", {})
         if m:
@@ -286,8 +291,16 @@ with tab_model:
                 if loss_rev is not None:
                     rows.append({"Objetivo": "Pérdida por fraude con zona de revisión", "Meta": "< 0,1 %",
                                  "Resultado": f"{loss_rev:.3%}", "Cumple": "✅ Sí" if loss_rev < 0.001 else "❌ No"})
-                    rows.append({"Objetivo": "Clientes legítimos enviados a verificación", "Meta": "—",
-                                 "Resultado": f"{m.get('legit_sent_to_review_%', 0):.3%}", "Cumple": "costo"})
+                loss_rule = m.get("residual_fraud_loss_with_rule_%_of_volume")
+                if loss_rule is not None:
+                    amt = model.get("high_amount_review")
+                    rows.append({"Objetivo": f"Pérdida por fraude con regla de monto alto (≥ {amt:,.0f})" if amt
+                                 else "Pérdida por fraude con regla de monto alto", "Meta": "< 0,1 %",
+                                 "Resultado": f"{loss_rule:.3%}", "Cumple": "✅ Sí" if loss_rule < 0.001 else "❌ No"})
+                friction = m.get("legit_sent_to_verification_%", m.get("legit_sent_to_review_%"))
+                if friction is not None:
+                    rows.append({"Objetivo": "Clientes legítimos enviados a verificación (no bloqueados)",
+                                 "Meta": "costo", "Resultado": f"{friction:.2%}", "Cumple": "—"})
                 st.dataframe(pd.DataFrame(rows), hide_index=True, width="stretch")
         with st.expander(f"Variables del modelo ({len(model['feature_columns'])})"):
             st.write(", ".join(model["feature_columns"]))
