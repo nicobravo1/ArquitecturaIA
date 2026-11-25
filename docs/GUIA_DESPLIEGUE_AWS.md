@@ -12,7 +12,36 @@ Internet ─HTTPS:8443─▶ Caddy ─▶ API FastAPI ──HTTPS/SigV4──▶
                      métricas ──▶ CloudWatch (SageMaker + EC2)
 ```
 
+## Antes de empezar: qué haces tú y qué hacen los scripts
+
+**No hay que crear nada a mano en la consola de AWS** (ni la instancia EC2, ni el endpoint,
+ni el bucket). Todos los comandos de esta guía se ejecutan en una **terminal de tu computador**,
+dentro de la carpeta del repositorio; los scripts usan tus credenciales del lab para crear los
+recursos en AWS. La consola web solo se usa para *mirar* y tomar capturas.
+
+| Paso | Tú haces | El script hace |
+|---|---|---|
+| 1 | Iniciar el Learner Lab y copiar las credenciales a tu computador | — |
+| 2 | Ejecutar el notebook con el dataset | Entrena el modelo y lo guarda en `models/` |
+| 3 | `python -m sagemaker_deploy.deploy` | Crea el endpoint de SageMaker |
+| 4 | `python -m infra.aws.ec2 up` | **Crea la instancia EC2**, el security group y la key, e instala todo adentro |
+| 5 | Esperar ~10 min y `python -m infra.aws.ec2 status` | Indica si está listo y muestra las URLs |
+| 6 | Abrir las URLs en el navegador / hacer la demo | — |
+| 7 | `python -m infra.aws.ec2 down` y `python -m sagemaker_deploy.teardown --yes` | Borra todo |
+
 ## 0. Requisitos en tu computador
+
+- Clonar el repositorio y entrar a su carpeta:
+
+  ```bash
+  git clone https://github.com/nicobravo1/ArquitecturaIA.git
+  ```
+
+  ```bash
+  cd ArquitecturaIA
+  ```
+
+- Instalar la AWS CLI si no la tienes (https://aws.amazon.com/cli/), solo para verificar las credenciales.
 
 - Python 3.12+, git y este repositorio clonado.
 - Dependencias: `pip install -r requirements-dev.txt`
@@ -21,8 +50,12 @@ Internet ─HTTPS:8443─▶ Caddy ─▶ API FastAPI ──HTTPS/SigV4──▶
 ## 1. Iniciar el lab y configurar credenciales
 
 1. En AWS Academy → *Learner Lab* → **Start Lab** (esperar el círculo verde).
-2. **AWS Details** → *AWS CLI: Show* → copiar el bloque a `~/.aws/credentials`
-   (las credenciales **expiran al terminar la sesión**: repetir este paso cada vez).
+2. **AWS Details** → *AWS CLI: Show* → copiar el bloque completo (empieza con `[default]`)
+   y pegarlo en el archivo de credenciales de tu computador, reemplazando su contenido:
+   - Linux / macOS: `~/.aws/credentials`
+   - Windows: `C:\Users\<tu usuario>\.aws\credentials` (crear la carpeta `.aws` si no existe)
+
+   Las credenciales **expiran al terminar la sesión del lab**: repetir este paso cada vez.
 3. Verificar:
 
    ```bash
