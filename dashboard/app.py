@@ -276,11 +276,18 @@ with tab_model:
             fp, loss = m.get("false_positive_share_of_blocks"), m.get("residual_fraud_loss_%_of_volume")
             if fp is not None and loss is not None:
                 st.markdown("**Objetivos de negocio**")
-                st.dataframe(pd.DataFrame([
+                rows = [
                     {"Objetivo": "Falsos positivos sobre bloqueos", "Meta": "< 5 %", "Resultado": f"{fp:.2%}",
                      "Cumple": "✅ Sí" if fp < 0.05 else "❌ No"},
-                    {"Objetivo": "Pérdida por fraude sobre volumen", "Meta": "< 0,1 %", "Resultado": f"{loss:.3%}",
+                    {"Objetivo": "Pérdida por fraude, solo bloqueos", "Meta": "< 0,1 %", "Resultado": f"{loss:.3%}",
                      "Cumple": "✅ Sí" if loss < 0.001 else "❌ No"},
-                ]), hide_index=True, width="stretch")
+                ]
+                loss_rev = m.get("residual_fraud_loss_with_review_%_of_volume")
+                if loss_rev is not None:
+                    rows.append({"Objetivo": "Pérdida por fraude con zona de revisión", "Meta": "< 0,1 %",
+                                 "Resultado": f"{loss_rev:.3%}", "Cumple": "✅ Sí" if loss_rev < 0.001 else "❌ No"})
+                    rows.append({"Objetivo": "Clientes legítimos enviados a verificación", "Meta": "—",
+                                 "Resultado": f"{m.get('legit_sent_to_review_%', 0):.3%}", "Cumple": "costo"})
+                st.dataframe(pd.DataFrame(rows), hide_index=True, width="stretch")
         with st.expander(f"Variables del modelo ({len(model['feature_columns'])})"):
             st.write(", ".join(model["feature_columns"]))

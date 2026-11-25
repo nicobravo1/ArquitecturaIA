@@ -71,7 +71,8 @@ def test_up_crea_instancia_segura(aws, model_dir):
 def test_user_data_valido_y_completo(aws):
     values = mod.generate_secrets("pagoseguro-fraud", REGION)
     ud = mod.render_user_data("https://github.com/acme/repo.git", "main", "s3://b/p/", values)
-    assert "__" not in ud.split("ENVEOF")[1]                       # sin placeholders en el .env
+    for placeholder in ("__REPO_URL__", "__BRANCH__", "__MODEL_S3__", "__ENV_FILE__"):
+        assert placeholder not in ud      # (los tokens aleatorios sí pueden contener "__")
     assert f"API_KEYS={values['API_KEYS']}" in ud and "SCORER_BACKEND=sagemaker" in ud
     assert "aws s3 cp \"$MODEL_S3\"" in ud and 'MODEL_S3="s3://b/p/"' in ud
     if shutil.which("bash"):
