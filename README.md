@@ -24,10 +24,10 @@ Streamlit (dashboard/) ◀──────────────────
 | `notebooks/` | `01_entrenamiento_xgboost.ipynb` – EDA, entrenamiento, umbral, métricas, SHAP, export | ✅ |
 | `models/` | Artefactos generados (`xgboost-model`, `model.tar.gz`, `metadata.json`, `deployment.json`) | generado |
 | `sagemaker_deploy/` | Despliegue del endpoint SageMaker, auto-scaling, prueba, métricas CloudWatch, teardown | ✅ |
-| `api/` | FastAPI (OpenAPI, API key, rate limiting) | ⏳ |
+| `api/` | FastAPI: scoring, OpenAPI/Swagger, API key, rate limiting, RabbitMQ, Prometheus, Dockerfile | ✅ |
 | `worker/` | Consumidor RabbitMQ que calcula SHAP | ⏳ |
 | `dashboard/` | Streamlit | ⏳ |
-| `tests/` | `unit/` (pytest, AWS simulado con moto) y `load/` (Locust) | 🟡 |
+| `tests/` | `unit/`, `api/` (pytest, AWS simulado con moto), `integration/` (RabbitMQ real), `load/` (Locust) | 🟡 |
 | `infra/` | docker-compose, Dockerfiles, despliegue AWS | ⏳ |
 
 ## Inicio rápido
@@ -46,6 +46,19 @@ Despliegue en SageMaker (detalle en [`sagemaker_deploy/README.md`](sagemaker_dep
 python -m sagemaker_deploy.deploy            # crea el endpoint pagoseguro-fraud
 python -m sagemaker_deploy.invoke_test       # verifica predicciones y latencia
 python -m sagemaker_deploy.teardown --yes    # elimina el endpoint al terminar
+```
+
+API (detalle en [`api/README.md`](api/README.md)), Swagger en http://localhost:8000/docs:
+
+```bash
+SCORER_BACKEND=local API_KEYS=demo-key uvicorn api.app.main:create_app --factory --port 8000
+```
+
+Tests (`-m integration` requiere RabbitMQ):
+
+```bash
+pytest                                                          # unitarios + API
+RABBITMQ_URL=amqp://guest:guest@localhost:5672/ pytest -m integration
 ```
 
 Variables opcionales del notebook: `DATA_PATH` (ruta alternativa del CSV), `N_TRIALS` (configuraciones a probar, por defecto 12), `MLFLOW_TRACKING_URI`.

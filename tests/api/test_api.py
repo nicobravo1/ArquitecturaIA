@@ -1,0 +1,199 @@
+"""Pruebas funcionales de la API FastAPI (backend local, sin AWS ni RabbitMQ)."""
+import json
+
+import pytest
+
+pytest.importorskip("fastapi")
+from fastapi.testclient import TestClient  # noqa: E402
+
+from api.app.config import Settings  # noqa: E402
+from api.app.main import create_app  # noqa: E402
+from api.app.scorers import LocalBackend, ScoringService  # noqa: E402
+
+KEY = "test-key-123"
+H = {"X-API-Key": KEY}
+
+
+class FakePublisher:
+    def __init__(self, ok=True):
+        self.ok, self.events, self.connected = ok, [], ok
+
+    async def start(self):
+        pass
+
+    async def publish(self, event):
+        self.events.append(event)
+        return self.ok
+
+    async def close(self):
+        pass
+
+
+class BrokenBackend:
+    name = "sagemaker"
+
+    def predict_proba(self, features):
+        raise TimeoutError("endpoint no responde")
+
+
+@pytest.fixture
+def samples(model_dir):
+    return json.loads((model_dir / "sample_payloads.json").read_text())
+
+
+def make_client(model_dir, publisher=None, scoring=None, **overrides):
+    cfg = dict(model_dir=model_dir, scorer_backend="local", api_keys=frozenset({KEY}),
+               rate_limit_per_minute=1000, rabbitmq_url=None)
+    cfg.update(overrides)
+    app = create_app(Settings(**cfg), scoring=scoring, publisher=publisher or FakePublisher())
+    return TestClient(app)
+
+
+@pytest.fixture
+def client(model_dir):
+    with make_client(model_dir) as c:
+        yield c
+
+
+# 1
+def test_health_sin_autenticacion(client):
+    r = client.get("/health")
+    assert r.status_code == 200
+    assert r.json() == {"status": "ok", "model_version": "xgb-test-0001", "scorer": "local", "rabbitmq": "disabled"}
+
+
+# 2
+@pytest.mark.parametrize("headers", [{}, {"X-API-Key": "otra"}])
+def test_score_rechaza_sin_api_key_valida(client, samples, headers):
+    r = client.post("/v1/transactions/score", json=samples["legit"][0], headers=headers)
+    assert r.status_code == 401 and r.headers["WWW-Authenticate"] == "ApiKey"
+
+
+# 3
+def test_score_legitima_aprobada_y_fraude_rechazado(client, samples):
+    legit = client.post("/v1/transactions/score", json=samples["legit"][0], headers=H).json()
+    fraud = client.post("/v1/transactions/score", json=samples["fraud"][0], headers=H).json()
+    assert legit["decision"] == "APPROVE" and fraud["decision"] == "REJECT"
+    assert fraud["fraud_probability"] > fraud["threshold"] > legit["fraud_probability"]
+    assert fraud["model_version"] == "xgb-test-0001" and fraud["scorer"] == "local"
+
+
+# 4
+def test_score_coincide_con_modelo_local(client, samples, model_dir):
+    from fraud_core import build_features
+    expected = LocalBackend(model_dir / "xgboost-model").predict_proba(build_features(samples["fraud"][0]))[0]
+    got = client.post("/v1/transactions/score", json=samples["fraud"][0], headers=H).json()
+    assert got["fraud_probability"] == pytest.approx(expected, abs=1e-6)
+
+
+# 5
+@pytest.mark.parametrize("mutate,field", [
+    (lambda t: t.pop("V5"), "V5"),
+    (lambda t: t.update(Amount=-10), "Amount"),
+    (lambda t: t.update(Amount="mucho"), "Amount"),
+    (lambda t: t.update(extra_field=1), "extra_field"),
+    (lambda t: t.update(card_number="1234"), "card_number"),
+])
+def test_score_valida_payload(client, samples, mutate, field):
+    tx = dict(samples["legit"][0]); mutate(tx)
+    r = client.post("/v1/transactions/score", json=tx, headers=H)
+    assert r.status_code == 422
+    assert any(field in map(str, e["loc"]) for e in r.json()["detail"])
+
+
+# 6
+def test_pan_enmascarado_y_nunca_publicado(model_dir, samples):
+    pub = FakePublisher()
+    with make_client(model_dir, publisher=pub) as c:
+        tx = samples["fraud"][0] | {"card_number": "4111 1111 1111 1234", "transaction_id": "tx-1"}
+        r = c.post("/v1/transactions/score", json=tx, headers=H).json()
+    assert r["card_masked"] == "************1234"
+    raw_event = json.dumps(pub.events)
+    assert "4111111111111234" not in raw_event and "************1234" in raw_event
+
+
+# 7
+def test_evento_publicado_para_worker_shap(model_dir, samples):
+    pub = FakePublisher()
+    with make_client(model_dir, publisher=pub) as c:
+        r = c.post("/v1/transactions/score", json=samples["fraud"][0] | {"transaction_id": "tx-42"}, headers=H).json()
+    assert r["explanation_status"] == "queued" and r["transaction_id"] == "tx-42"
+    (ev,) = pub.events
+    assert ev["transaction_id"] == "tx-42" and ev["decision"] == "REJECT"
+    assert set(ev["features"]) >= {"Time", "Amount", "V1", "V28"}
+
+
+# 8
+def test_broker_caido_no_bloquea_el_pago(model_dir, samples):
+    with make_client(model_dir, publisher=FakePublisher(ok=False)) as c:
+        r = c.post("/v1/transactions/score", json=samples["legit"][0], headers=H)
+    assert r.status_code == 200 and r.json()["explanation_status"] == "unavailable"
+
+
+# 9
+def test_rate_limit_devuelve_429(model_dir, samples):
+    with make_client(model_dir, rate_limit_per_minute=3) as c:
+        codes = [c.post("/v1/transactions/score", json=samples["legit"][0], headers=H).status_code
+                 for _ in range(4)]
+        last = c.post("/v1/transactions/score", json=samples["legit"][0], headers=H)
+    assert codes == [200, 200, 200, 429]
+    assert int(last.headers["Retry-After"]) >= 1
+
+
+# 10
+def test_batch_y_limite_de_tamano(model_dir, samples):
+    txs = (samples["legit"] + samples["fraud"]) * 2
+    with make_client(model_dir, max_batch_size=2) as c:
+        ok = c.post("/v1/transactions/score/batch", json={"transactions": txs[:2]}, headers=H)
+        too_big = c.post("/v1/transactions/score/batch", json={"transactions": txs[:3]}, headers=H)
+        empty = c.post("/v1/transactions/score/batch", json={"transactions": []}, headers=H)
+    assert ok.status_code == 200 and ok.json()["count"] == 2
+    assert too_big.status_code == 413 and empty.status_code == 422
+
+
+# 11
+def test_fallback_local_si_sagemaker_falla(model_dir, samples):
+    scoring = ScoringService(BrokenBackend(), LocalBackend(model_dir / "xgboost-model"))
+    with make_client(model_dir, scoring=scoring) as c:
+        r = c.post("/v1/transactions/score", json=samples["fraud"][0], headers=H)
+    assert r.status_code == 200 and r.json()["scorer"] == "local-fallback"
+
+
+# 12
+def test_503_si_sagemaker_falla_sin_fallback(model_dir, samples):
+    with make_client(model_dir, scoring=ScoringService(BrokenBackend())) as c:
+        r = c.post("/v1/transactions/score", json=samples["fraud"][0], headers=H)
+    assert r.status_code == 503
+
+
+# 13
+def test_model_info_y_cabeceras(client):
+    r = client.get("/v1/model", headers=H | {"X-Request-ID": "abc"})
+    body = r.json()
+    assert body["threshold"] == 0.6 and body["review_threshold"] == 0.3 and len(body["feature_columns"]) == 30
+    assert r.headers["X-Request-ID"] == "abc" and "X-Process-Time-Ms" in r.headers
+    assert r.headers["X-RateLimit-Limit"] == "1000"
+
+
+# 14
+def test_metricas_prometheus(client, samples):
+    client.post("/v1/transactions/score", json=samples["fraud"][0], headers=H)
+    text = client.get("/metrics").text
+    assert 'fraud_api_decisions_total{decision="REJECT",scorer="local"} 1.0' in text
+    assert "fraud_api_request_latency_seconds_bucket" in text
+
+
+# 15
+def test_openapi_documenta_endpoints_y_seguridad(client):
+    spec = client.get("/openapi.json").json()
+    assert {"/v1/transactions/score", "/v1/transactions/score/batch", "/v1/model", "/health"} <= set(spec["paths"])
+    assert "APIKeyHeader" in spec["components"]["securitySchemes"]
+    assert client.get("/docs").status_code == 200
+
+
+# 16
+def test_sin_api_keys_limita_por_ip(model_dir, samples):
+    with make_client(model_dir, api_keys=frozenset(), rate_limit_per_minute=1) as c:
+        first = c.post("/v1/transactions/score", json=samples["legit"][0])
+        second = c.post("/v1/transactions/score", json=samples["legit"][0])
+    assert first.status_code == 200 and second.status_code == 429

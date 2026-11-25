@@ -1,0 +1,13 @@
+.git
+.venv
+venv
+**/__pycache__
+**/.pytest_cache
+**/.ipynb_checkpoints
+data/
+mlruns/
+docs/
+notebooks/
+tests/
+models/*.tar.gz
+models/*.csv
