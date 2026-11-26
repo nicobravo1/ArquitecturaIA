@@ -188,10 +188,14 @@ cd /opt/pagoseguro && sudo mkdir -p tests/load/reports
 
 ```bash
 sudo docker compose -f docker-compose.yml -f infra/aws/docker-compose.aws.yml --profile load \
-  run --rm --user root -e LOAD_SHAPE=steady -e LOAD_SCALE=0.5 locust \
+  run --rm --no-deps --user root -e LOAD_SHAPE=steady -e LOAD_SCALE=0.5 locust \
   -f /mnt/locust/locustfile.py --host http://api:8000 --headless --only-summary \
   --csv /mnt/locust/reports/aws_steady --html /mnt/locust/reports/aws_steady.html
 ```
+
+`--no-deps` evita que compose recree la API justo antes de la prueba (si detecta un cambio
+de configuración lo hace, y las primeras solicitudes fallan con `HTTP 0` mientras la API arranca).
+Verificar antes con `sudo docker ps` que `api` esté `(healthy)`.
 
 Repetir con `LOAD_SHAPE=spike` para provocar el auto-scaling del endpoint. En otra terminal,
 observar las instancias del endpoint:
