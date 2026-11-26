@@ -325,9 +325,13 @@ def status(args, sess=None) -> dict:
         print("  La instancia está detenida (fin de sesión del lab). Iníciala desde la consola EC2;\n"
               "  el servicio pagoseguro.service levanta todo con la nueva IP.")
     if st == "running" and ip:
-        print("  API /health    :", _probe(f"https://{ip}:8443/health"))
-        print("  Dashboard      :", _probe(f"https://{ip}:8444/_stcore/health").split(" ")[0],
-              "(401 = pide usuario/clave: OK)")
+        api = _probe(f"https://{ip}:8443/health")
+        dash = _probe(f"https://{ip}:8444/_stcore/health")
+        print("  API /health    :", api)
+        print("  Dashboard      :", "401 → listo (pide usuario/clave)" if dash.startswith("401") else dash)
+        if api.startswith("sin respuesta"):
+            print("  Aún instalando si pasaron < 10 min desde `up`. Si no, revisa el log por SSH:\n"
+                  "    sudo tail -50 /var/log/pagoseguro-setup.log")
     return {"state": st, "ip": ip}
 
 
