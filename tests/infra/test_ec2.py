@@ -118,3 +118,22 @@ def test_user_data_con_fin_de_linea_windows(aws, monkeypatch, tmp_path):
     assert "\r" not in ud
     if shutil.which("bash"):
         assert subprocess.run(["bash", "-n"], input=ud, text=True).returncode == 0
+
+
+def test_descripciones_de_reglas_validas_para_aws():
+    """AWS rechaza descripciones con tildes u otros caracteres fuera de su conjunto."""
+    for rule in mod._ingress_rules("0.0.0.0/0", "203.0.113.7/32"):
+        desc = rule["IpRanges"][0]["Description"]
+        assert desc.isascii() and mod._SG_DESCRIPTION_OK.match(desc)
+
+
+def test_up_repara_security_group_sin_reglas(aws):
+    """Si un `up` anterior falló tras crear el grupo, el siguiente agrega las reglas que faltan."""
+    ec2 = aws.client("ec2")
+    vpc = ec2.describe_vpcs()["Vpcs"][0]["VpcId"]
+    sg = ec2.create_security_group(GroupName="pagoseguro-fraud-sg", Description="x", VpcId=vpc)["GroupId"]
+    state = mod.up(_args(), sess=aws)
+    assert state["security_group_id"] == sg
+    perms = ec2.describe_security_groups(GroupIds=[sg])["SecurityGroups"][0]["IpPermissions"]
+    assert {p["FromPort"] for p in perms} == {22, 8443, 8444}
+    mod.ensure_security_group(ec2, "pagoseguro-fraud-sg", "0.0.0.0/0", "203.0.113.7/32")   # no duplica

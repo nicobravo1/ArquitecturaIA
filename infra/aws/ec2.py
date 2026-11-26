@@ -24,6 +24,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import secrets
 import ssl
 import subprocess
@@ -177,17 +178,11 @@ def ensure_key_pair(ec2, name: str) -> Path:
     return pem
 
 
-def ensure_security_group(ec2, name: str, public_cidr: str, ssh_cidr: str | None) -> str:
-    vpc = ec2.describe_vpcs(Filters=[{"Name": "isDefault", "Values": ["true"]}])["Vpcs"]
-    if not vpc:
-        raise SystemExit("No hay VPC por defecto en la región")
-    found = ec2.describe_security_groups(Filters=[{"Name": "group-name", "Values": [name]},
-                                                  {"Name": "vpc-id", "Values": [vpc[0]["VpcId"]]}])
-    if found["SecurityGroups"]:
-        return found["SecurityGroups"][0]["GroupId"]
-    sg = ec2.create_security_group(GroupName=name, VpcId=vpc[0]["VpcId"],
-                                   Description="PagoSeguro fraude: HTTPS API 8443, dashboard 8444, SSH",
-                                   TagSpecifications=[{"ResourceType": "security-group", "Tags": _tags("sg")}])["GroupId"]
+# Las descripciones de reglas solo aceptan ASCII: a-zA-Z0-9. _-:/()#,@[]+=&;{}!$*
+_SG_DESCRIPTION_OK = re.compile(r"^[a-zA-Z0-9. _\-:/()#,@\[\]+=&;{}!$*]{0,255}$")
+
+
+def _ingress_rules(public_cidr: str, ssh_cidr: str | None) -> list[dict]:
     rules = [
         {"IpProtocol": "tcp", "FromPort": 8443, "ToPort": 8443,
          "IpRanges": [{"CidrIp": public_cidr, "Description": "API HTTPS"}]},
@@ -196,8 +191,34 @@ def ensure_security_group(ec2, name: str, public_cidr: str, ssh_cidr: str | None
     ]
     if ssh_cidr:
         rules.append({"IpProtocol": "tcp", "FromPort": 22, "ToPort": 22,
-                      "IpRanges": [{"CidrIp": ssh_cidr, "Description": "SSH administración"}]})
-    ec2.authorize_security_group_ingress(GroupId=sg, IpPermissions=rules)
+                      "IpRanges": [{"CidrIp": ssh_cidr, "Description": "SSH administracion"}]})
+    for r in rules:
+        assert _SG_DESCRIPTION_OK.match(r["IpRanges"][0]["Description"]), r
+    return rules
+
+
+def ensure_security_group(ec2, name: str, public_cidr: str, ssh_cidr: str | None) -> str:
+    """Crea el security group si no existe y agrega las reglas que falten (idempotente:
+    un `up` que falló a medias se puede repetir sin dejar el grupo sin reglas)."""
+    vpc = ec2.describe_vpcs(Filters=[{"Name": "isDefault", "Values": ["true"]}])["Vpcs"]
+    if not vpc:
+        raise SystemExit("No hay VPC por defecto en la región")
+    found = ec2.describe_security_groups(Filters=[{"Name": "group-name", "Values": [name]},
+                                                  {"Name": "vpc-id", "Values": [vpc[0]["VpcId"]]}])
+    if found["SecurityGroups"]:
+        sg = found["SecurityGroups"][0]["GroupId"]
+        existing = {(p.get("FromPort"), r["CidrIp"]) for p in found["SecurityGroups"][0]["IpPermissions"]
+                    for r in p.get("IpRanges", [])}
+    else:
+        sg = ec2.create_security_group(GroupName=name, VpcId=vpc[0]["VpcId"],
+                                       Description="PagoSeguro fraude: API 8443, dashboard 8444, SSH",
+                                       TagSpecifications=[{"ResourceType": "security-group",
+                                                           "Tags": _tags("sg")}])["GroupId"]
+        existing = set()
+    missing = [r for r in _ingress_rules(public_cidr, ssh_cidr)
+               if (r["FromPort"], r["IpRanges"][0]["CidrIp"]) not in existing]
+    if missing:
+        ec2.authorize_security_group_ingress(GroupId=sg, IpPermissions=missing)
     return sg
 
 
