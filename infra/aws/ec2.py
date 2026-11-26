@@ -222,6 +222,22 @@ def ensure_security_group(ec2, name: str, public_cidr: str, ssh_cidr: str | None
     return sg
 
 
+def ensure_log_group(cw_logs, retention_days: int = 30) -> None:
+    """Crea el grupo de logs (idempotente). Si el lab no lo permite, la instancia lo
+    intentará de nuevo al arrancar (pagoseguro-start), así que solo se avisa."""
+    try:
+        cw_logs.create_log_group(logGroupName=LOG_GROUP, tags={"project": PROJECT})
+    except cw_logs.exceptions.ResourceAlreadyExistsException:
+        pass
+    except cw_logs.exceptions.ClientError as err:
+        print(f"  ⚠ No se pudo crear el grupo de logs {LOG_GROUP}: {err}")
+        return
+    try:
+        cw_logs.put_retention_policy(logGroupName=LOG_GROUP, retentionInDays=retention_days)
+    except cw_logs.exceptions.ClientError as err:
+        print(f"  ⚠ No se pudo fijar la retención de logs: {err}")
+
+
 def up(args, sess=None) -> dict:
     sess = sess or session(args.region)
     ec2 = sess.client("ec2")
@@ -244,6 +260,10 @@ def up(args, sess=None) -> dict:
     pem = ensure_key_pair(ec2, args.key_name)
     ssh_cidr = args.ssh_cidr if args.ssh_cidr != "auto" else (f"{ip}/32" if (ip := my_public_ip()) else None)
     sg = ensure_security_group(ec2, f"{PROJECT}-sg", args.public_cidr, ssh_cidr)
+
+    # Grupo de logs creado una sola vez desde aquí: si lo crean varios contenedores a la vez
+    # al arrancar, CloudWatch rechaza las solicitudes concurrentes (OperationAbortedException).
+    ensure_log_group(sess.client("logs"))
 
     print("[3/5] Secretos y user-data")
     values = generate_secrets(dep["endpoint_name"], args.region)

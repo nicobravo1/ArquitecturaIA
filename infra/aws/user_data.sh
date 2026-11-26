@@ -53,7 +53,17 @@ TOKEN=$(curl -fsS -X PUT http://169.254.169.254/latest/api/token -H "X-aws-ec2-m
 IP=$(curl -fsS -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/public-ipv4)
 sed -i '/^PUBLIC_HOST=/d' .env
 echo "PUBLIC_HOST=${IP}" >> .env
-docker compose -f docker-compose.yml -f infra/aws/docker-compose.aws.yml up -d --build
+# El grupo de logs se crea antes de arrancar: si varios contenedores intentan crearlo a la
+# vez, CloudWatch responde OperationAbortedException y el arranque falla.
+REGION=$(grep '^AWS_REGION=' .env | cut -d= -f2)
+aws logs create-log-group --log-group-name /pagoseguro/fraud --region "$REGION" 2>/dev/null || true
+for attempt in 1 2 3; do
+  if docker compose -f docker-compose.yml -f infra/aws/docker-compose.aws.yml up -d --build; then
+    break
+  fi
+  echo "docker compose up falló (intento ${attempt}); reintentando en 15 s"
+  sleep 15
+done
 echo "PagoSeguro en https://${IP}:8443/docs y https://${IP}:8444"
 STARTEOF
 chmod +x /usr/local/bin/pagoseguro-start

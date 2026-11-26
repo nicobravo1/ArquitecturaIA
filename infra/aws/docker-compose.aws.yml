@@ -9,7 +9,7 @@ x-cloudwatch: &cloudwatch
   options:
     awslogs-region: ${AWS_REGION:-us-east-1}
     awslogs-group: /pagoseguro/fraud
-    awslogs-create-group: "true"
+    awslogs-create-group: "true"   # el grupo ya lo crean ec2.py y pagoseguro-start
     tag: "{{.Name}}"
 
 services:

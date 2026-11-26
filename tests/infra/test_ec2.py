@@ -137,3 +137,17 @@ def test_up_repara_security_group_sin_reglas(aws):
     perms = ec2.describe_security_groups(GroupIds=[sg])["SecurityGroups"][0]["IpPermissions"]
     assert {p["FromPort"] for p in perms} == {22, 8443, 8444}
     mod.ensure_security_group(ec2, "pagoseguro-fraud-sg", "0.0.0.0/0", "203.0.113.7/32")   # no duplica
+
+
+def test_up_crea_el_grupo_de_logs_antes_de_arrancar(aws):
+    mod.up(_args(), sess=aws)
+    groups = aws.client("logs").describe_log_groups(logGroupNamePrefix="/pagoseguro/fraud")["logGroups"]
+    assert groups and groups[0]["retentionInDays"] == 30
+    mod.ensure_log_group(aws.client("logs"))          # idempotente
+
+
+def test_start_script_crea_log_group_y_reintenta():
+    ud = mod.USER_DATA_TEMPLATE.read_text(encoding="utf-8")
+    start = ud[ud.index("<<'STARTEOF'"):ud.index("\nSTARTEOF\n")]
+    assert start.index("aws logs create-log-group") < start.index("docker compose")
+    assert "for attempt in 1 2 3" in start
