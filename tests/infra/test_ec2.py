@@ -106,3 +106,15 @@ def test_down_limpia_todo(aws):
     assert not mod.STATE_FILE.exists()
     groups = [g["GroupName"] for g in ec2.describe_security_groups()["SecurityGroups"]]
     assert "pagoseguro-fraud-sg" not in groups
+
+
+def test_user_data_con_fin_de_linea_windows(aws, monkeypatch, tmp_path):
+    """git en Windows (autocrlf) puede dejar el script con CRLF: bash fallaría con '\\r'."""
+    crlf = tmp_path / "user_data_crlf.sh"
+    crlf.write_bytes(mod.USER_DATA_TEMPLATE.read_bytes().replace(b"\n", b"\r\n"))
+    monkeypatch.setattr(mod, "USER_DATA_TEMPLATE", crlf)
+    ud = mod.render_user_data("https://github.com/a/b.git", "main", "s3://b/p/",
+                              mod.generate_secrets("ep", REGION))
+    assert "\r" not in ud
+    if shutil.which("bash"):
+        assert subprocess.run(["bash", "-n"], input=ud, text=True).returncode == 0

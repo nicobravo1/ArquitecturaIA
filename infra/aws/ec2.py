@@ -77,18 +77,18 @@ def my_public_ip() -> str | None:
 
 
 def load_state() -> dict:
-    return json.loads(STATE_FILE.read_text()) if STATE_FILE.exists() else {}
+    return json.loads(STATE_FILE.read_text(encoding="utf-8")) if STATE_FILE.exists() else {}
 
 
 def save_state(state: dict) -> None:
-    STATE_FILE.write_text(json.dumps(state, indent=2))
+    STATE_FILE.write_text(json.dumps(state, indent=2), encoding="utf-8")
 
 
 def generate_secrets(endpoint: str, region: str) -> dict[str, str]:
     """Reutiliza los secretos existentes para que un `up` repetido no invalide las keys."""
     current: dict[str, str] = {}
     if SECRETS_FILE.exists():
-        for line in SECRETS_FILE.read_text().splitlines():
+        for line in SECRETS_FILE.read_text(encoding="utf-8").splitlines():
             if "=" in line and not line.startswith("#"):
                 k, v = line.split("=", 1)
                 current[k] = v
@@ -106,8 +106,9 @@ def generate_secrets(endpoint: str, region: str) -> dict[str, str]:
         "AWS_REGION": region,
     }
     values["API_KEYS"] = ",".join([values["CLIENT_API_KEY"], values["DASHBOARD_API_KEY"], values["LOAD_API_KEY"]])
-    SECRETS_FILE.write_text("# Generado por infra/aws/ec2.py — NO versionar\n"
-                            + "\n".join(f"{k}={v}" for k, v in values.items()) + "\n")
+    SECRETS_FILE.write_text("# Generado por infra/aws/ec2.py - NO versionar\n"
+                            + "\n".join(f"{k}={v}" for k, v in values.items()) + "\n",
+                            encoding="utf-8", newline="\n")
     SECRETS_FILE.chmod(0o600)
     return values
 
@@ -120,7 +121,9 @@ def env_file(values: dict[str, str]) -> str:
 
 
 def render_user_data(repo: str, branch: str, model_s3: str, values: dict[str, str]) -> str:
-    text = USER_DATA_TEMPLATE.read_text()
+    # utf-8 explícito (Windows usa cp1252 por defecto); la lectura en modo texto también
+    # convierte CRLF -> LF si git en Windows cambió los fines de línea del script
+    text = USER_DATA_TEMPLATE.read_text(encoding="utf-8").replace("\r\n", "\n")
     for key, val in {"__REPO_URL__": repo, "__BRANCH__": branch, "__MODEL_S3__": model_s3,
                      "__ENV_FILE__": env_file(values)}.items():
         text = text.replace(key, val)
@@ -169,7 +172,7 @@ def ensure_key_pair(ec2, name: str) -> Path:
         pass
     key = ec2.create_key_pair(KeyName=name, KeyType="ed25519",
                               TagSpecifications=[{"ResourceType": "key-pair", "Tags": _tags("key")}])
-    pem.write_text(key["KeyMaterial"])
+    pem.write_text(key["KeyMaterial"], encoding="ascii", newline="\n")   # LF: ssh rechaza claves con CRLF
     pem.chmod(0o600)
     return pem
 

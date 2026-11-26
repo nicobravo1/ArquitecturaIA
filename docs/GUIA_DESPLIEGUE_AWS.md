@@ -171,6 +171,15 @@ es de ~120–150 ms). Conectarse por SSH:
 ssh -i infra/aws/pagoseguro-fraud-key.pem ec2-user@$IP
 ```
 
+> **Windows:** OpenSSH rechaza la clave si otros usuarios pueden leerla
+> (`UNPROTECTED PRIVATE KEY FILE`). En PowerShell, una sola vez:
+>
+> ```powershell
+> icacls infra\aws\pagoseguro-fraud-key.pem /inheritance:r /grant:r "$($env:USERNAME):R"
+> ```
+>
+> y luego `ssh -i infra\aws\pagoseguro-fraud-key.pem ec2-user@<IP>`.
+
 En la instancia:
 
 ```bash

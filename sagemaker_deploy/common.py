@@ -89,4 +89,8 @@ def ensure_bucket(s3, bucket: str, region: str) -> None:
 def load_json(path: Path) -> dict:
     if not path.exists():
         raise SystemExit(f"No existe {path}. Ejecuta primero el notebook de entrenamiento / deploy.py")
-    return json.loads(path.read_text())
+    raw = path.read_bytes()
+    try:
+        return json.loads(raw.decode("utf-8"))
+    except UnicodeDecodeError:          # archivo escrito en Windows con cp1252
+        return json.loads(raw.decode("cp1252"))
