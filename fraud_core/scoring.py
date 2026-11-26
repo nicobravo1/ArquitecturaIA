@@ -96,15 +96,18 @@ class SageMakerScorer:
     """Invoca el endpoint y devuelve probabilidad, decisión y latencia."""
 
     def __init__(self, endpoint_name: str, thresholds: Thresholds,
-                 runtime_client: Any = None, region_name: str | None = None):
+                 runtime_client: Any = None, region_name: str | None = None,
+                 max_connections: int = 50):
         if runtime_client is None:
             import boto3
             from botocore.config import Config
 
             runtime_client = boto3.client(
                 "sagemaker-runtime", region_name=region_name,
-                # Fallar rápido: el flujo de pago tiene presupuesto de 100 ms
-                config=Config(connect_timeout=1, read_timeout=2,
+                # Fallar rápido: el flujo de pago tiene presupuesto de 100 ms.
+                # max_pool_connections: por defecto botocore abre solo 10 conexiones
+                # HTTP; con más requests concurrentes, el resto espera turno.
+                config=Config(connect_timeout=1, read_timeout=2, max_pool_connections=max_connections,
                               retries={"max_attempts": 2, "mode": "standard"}),
             )
         self.endpoint_name = endpoint_name

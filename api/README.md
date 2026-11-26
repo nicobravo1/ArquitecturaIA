@@ -70,6 +70,9 @@ docker run -p 8000:8000 -e API_KEYS=demo-key -e SCORER_BACKEND=sagemaker \
 | `RABBITMQ_EXCHANGE` | `fraud.events` | Exchange topic |
 | `RABBITMQ_PUBLISH_TIMEOUT_MS` | `50` | Tiempo máximo de publicación (no bloquear el pago) |
 | `DATABASE_URL` | *(vacío = consultas de auditoría deshabilitadas)* | Misma BD que escribe el worker |
+| `API_IO_THREADS` | `64` | Hilos para llamadas bloqueantes (SageMaker, BD). El default de asyncio es CPUs+4 (6 en 2 vCPU) |
+| `SAGEMAKER_MAX_CONNECTIONS` | `64` | Conexiones HTTP simultáneas al endpoint (botocore usa 10 por defecto) |
+| `WEB_CONCURRENCY` | `1` | Procesos uvicorn por contenedor (en compose: `API_WORKERS`) |
 | `MAX_BATCH_SIZE` | `100` | Tamaño máximo de lote |
 | `MODEL_DIR` | `models/` | Carpeta con `metadata.json` y `xgboost-model` |
 | `CORS_ORIGINS` | *(vacío)* | Orígenes permitidos (p. ej. el dashboard) |

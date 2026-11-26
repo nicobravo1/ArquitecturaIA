@@ -56,6 +56,11 @@ services:
       AWS_REGION: ${AWS_REGION:-us-east-1}
       API_KEYS: ${API_KEYS:?define API_KEYS en .env}
       RATE_LIMIT_PER_MINUTE: ${RATE_LIMIT_PER_MINUTE:-6000}
+      # Procesos uvicorn por contenedor. 1 = métricas Prometheus exactas por réplica;
+      # >1 aprovecha varias CPU en un solo nodo (cada proceso expone sus propias métricas).
+      WEB_CONCURRENCY: ${API_WORKERS:-1}
+      API_IO_THREADS: ${API_IO_THREADS:-64}
+      SAGEMAKER_MAX_CONNECTIONS: ${SAGEMAKER_MAX_CONNECTIONS:-64}
     volumes:
       - ${AWS_CONFIG_DIR:-~/.aws}:/home/app/.aws:ro   # credenciales para SCORER_BACKEND=sagemaker
     ports: ["127.0.0.1:8000:8000"]

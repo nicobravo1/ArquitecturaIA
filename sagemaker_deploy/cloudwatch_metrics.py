@@ -58,13 +58,21 @@ def collect(cw, endpoint: str, hours: float, period: int, instance_id: str | Non
 
 
 def summarize(rows: list[dict]) -> dict:
-    out: dict[str, float] = {}
+    """Sum → total del período. Average → promedio de los minutos con datos y, aparte,
+    el peor minuto. Percentiles (p99) → peor minuto (no se pueden promediar)."""
+    groups: dict[str, list[float]] = {}
     for r in rows:
-        key = f"{r['source']}.{r['metric']}_{r['stat']}_{r['unit']}"
-        if r["stat"] == "Sum":
-            out[key] = out.get(key, 0) + r["value"]
+        groups.setdefault(f"{r['source']}.{r['metric']}|{r['stat']}|{r['unit']}", []).append(r["value"])
+    out: dict[str, float] = {}
+    for key, vals in sorted(groups.items()):
+        name, stat, unit = key.split("|")
+        if stat == "Sum":
+            out[f"{name}_total_{unit}"] = round(sum(vals), 4)
+        elif stat == "Average":
+            out[f"{name}_promedio_{unit}"] = round(sum(vals) / len(vals), 4)
+            out[f"{name}_peor_minuto_{unit}"] = round(max(vals), 4)
         else:
-            out[key] = max(out.get(key, 0), r["value"])
+            out[f"{name}_{stat}_peor_minuto_{unit}"] = round(max(vals), 4)
     return out
 
 

@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient  # noqa: E402
 from api.app.config import Settings  # noqa: E402
 from api.app.main import create_app  # noqa: E402
 from api.app.scorers import LocalBackend, ScoringService  # noqa: E402
+from fraud_core.scoring import Thresholds as Thresholds_  # noqa: E402
 
 KEY = "test-key-123"
 H = {"X-API-Key": KEY}
@@ -258,3 +259,17 @@ def test_regla_monto_alto_en_la_api(model_dir, samples):
     assert normal["decision"] == "APPROVE" and normal["rule"] is None
     assert alto["decision"] == "REVIEW" and alto["rule"] == "high_amount"
     assert pub.events[1]["rule"] == "high_amount" and info["high_amount_review"] == 500.0
+
+
+# 21
+def test_pools_de_io_configurables(model_dir):
+    import asyncio
+    with make_client(model_dir, io_threads=40) as c:
+        executor = c.portal.call(lambda: asyncio.get_running_loop()._default_executor)
+    assert executor._max_workers == 40
+
+
+def test_sagemaker_scorer_pool_de_conexiones():
+    from fraud_core.scoring import SageMakerScorer
+    sc = SageMakerScorer("ep", Thresholds_(0.6, 0.3), region_name="us-east-1", max_connections=77)
+    assert sc.runtime.meta.config.max_pool_connections == 77

@@ -35,6 +35,11 @@ class Settings:
         default_factory=lambda: int(os.environ.get("RABBITMQ_PUBLISH_TIMEOUT_MS", "50")))
     # Almacén de auditoría escrito por el worker SHAP (lado query de CQRS)
     database_url: str | None = field(default_factory=lambda: os.environ.get("DATABASE_URL"))
+    # Hilos para llamadas bloqueantes (SageMaker vía boto3, BD de auditoría). El pool por
+    # defecto de asyncio es min(32, CPUs + 4): solo 6 en una instancia de 2 vCPU.
+    io_threads: int = field(default_factory=lambda: int(os.environ.get("API_IO_THREADS", "64")))
+    sagemaker_max_connections: int = field(
+        default_factory=lambda: int(os.environ.get("SAGEMAKER_MAX_CONNECTIONS", "64")))
     max_batch_size: int = field(default_factory=lambda: int(os.environ.get("MAX_BATCH_SIZE", "100")))
     cors_origins: tuple[str, ...] = field(default_factory=lambda: tuple(
         o for o in os.environ.get("CORS_ORIGINS", "").split(",") if o))

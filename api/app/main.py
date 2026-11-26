@@ -20,6 +20,7 @@ import asyncio
 import logging
 import time
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 
@@ -74,6 +75,10 @@ def create_app(settings: Settings | None = None, scoring: ScoringService | None 
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
+        # asyncio.to_thread usa el executor por defecto: se agranda para que las llamadas
+        # concurrentes a SageMaker no hagan cola detrás de solo CPUs+4 hilos.
+        asyncio.get_running_loop().set_default_executor(
+            ThreadPoolExecutor(max_workers=settings.io_threads, thread_name_prefix="io"))
         app.state.scoring = scoring or build_scoring_service(settings, thresholds)
         app.state.publisher = publisher or build_publisher(settings)
         app.state.audit = audit_store

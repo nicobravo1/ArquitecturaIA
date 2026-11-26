@@ -45,8 +45,10 @@ class LocalBackend:
 class SageMakerBackend:
     name = "sagemaker"
 
-    def __init__(self, endpoint: str, thresholds: Thresholds, region: str | None = None, runtime_client=None):
-        self.scorer = SageMakerScorer(endpoint, thresholds, runtime_client=runtime_client, region_name=region)
+    def __init__(self, endpoint: str, thresholds: Thresholds, region: str | None = None, runtime_client=None,
+                 max_connections: int = 50):
+        self.scorer = SageMakerScorer(endpoint, thresholds, runtime_client=runtime_client, region_name=region,
+                                      max_connections=max_connections)
 
     def predict_proba(self, features: pd.DataFrame | np.ndarray) -> list[float]:
         return self.scorer.predict_proba(features)
@@ -85,4 +87,5 @@ def build_scoring_service(settings, thresholds: Thresholds) -> ScoringService:
         raise RuntimeError("Falta SAGEMAKER_ENDPOINT (o models/deployment.json)")
     region = settings.aws_region or dep.get("region")
     fallback = LocalBackend(model_path) if settings.local_fallback and model_path.exists() else None
-    return ScoringService(SageMakerBackend(endpoint, thresholds, region), fallback)
+    return ScoringService(SageMakerBackend(endpoint, thresholds, region,
+                                           max_connections=settings.sagemaker_max_connections), fallback)

@@ -126,5 +126,18 @@ def test_cloudwatch_metrics_endpoint_y_ec2(aws, monkeypatch):
         "Dimensions": [{"Name": "InstanceId", "Value": "i-123"}]}])
     rows = cwm.collect(cw, "ep", hours=1, period=60, instance_id="i-123")
     summary = cwm.summarize(rows)
-    assert summary["endpoint.Invocations_Sum_count"] == 42
-    assert summary["ec2.CPUUtilization_Average_%"] == 37.5
+    assert summary["endpoint.Invocations_total_count"] == 42
+    assert summary["ec2.CPUUtilization_promedio_%"] == 37.5
+    assert summary["ec2.CPUUtilization_peor_minuto_%"] == 37.5
+
+
+def test_resumen_cloudwatch_distingue_promedio_y_peor_minuto():
+    from sagemaker_deploy.cloudwatch_metrics import summarize
+    rows = [{"source": "endpoint", "metric": "OverheadLatency", "stat": "Average", "unit": "ms", "value": v}
+            for v in (2.0, 3.0, 55.0)]
+    rows += [{"source": "endpoint", "metric": "ModelLatency", "stat": "p99", "unit": "ms", "value": v}
+             for v in (10.0, 20.0)]
+    s = summarize(rows)
+    assert s["endpoint.OverheadLatency_promedio_ms"] == 20.0
+    assert s["endpoint.OverheadLatency_peor_minuto_ms"] == 55.0
+    assert s["endpoint.ModelLatency_p99_peor_minuto_ms"] == 20.0
